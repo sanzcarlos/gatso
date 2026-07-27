@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,31 +38,47 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ padding: "2rem", maxWidth: 480 }}>
-      <h1>Iniciar sesion</h1>
+    <Card>
+      <CardHeader>
+        <CardTitle>Iniciar sesion</CardTitle>
+        <CardDescription>Introduce tu alias y contrasena.</CardDescription>
+      </CardHeader>
       <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="alias">Alias</label>
-          <input id="alias" value={alias} onChange={(e) => setAlias(e.target.value)} required />
-        </div>
-        <div>
-          <label htmlFor="password">Contrasena</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
-        {error ? <p role="alert">{error}</p> : null}
-        <button type="submit" disabled={loading}>
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alias">Alias</Label>
+            <Input id="alias" value={alias} onChange={(e) => setAlias(e.target.value)} required />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="password">Contrasena</Label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          {error ? (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {error}
+            </p>
+          ) : null}
+        </CardContent>
+        <CardFooter className="flex-col gap-3">
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Entrando..." : "Entrar"}
+          </Button>
+          <div className="flex w-full justify-between text-sm text-muted-foreground">
+            <Link href="/recover" className="font-medium text-primary hover:underline">
+              Olvide mi contrasena
+            </Link>
+            <Link href="/register" className="font-medium text-primary hover:underline">
+              Crear cuenta
+            </Link>
+          </div>
+        </CardFooter>
       </form>
-      <p>
-        <a href="/recover">Olvide mi contrasena</a>
-      </p>
-    </main>
+    </Card>
   );
 }

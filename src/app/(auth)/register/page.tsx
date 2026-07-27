@@ -2,7 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -34,52 +46,76 @@ export default function RegisterPage() {
 
   if (recoveryCode) {
     return (
-      <main style={{ padding: "2rem", maxWidth: 480 }}>
-        <h1>Cuenta creada</h1>
-        <p>
-          Guarda este codigo de recuperacion en un lugar seguro. No se
-          mostrara de nuevo y es la unica forma de recuperar tu cuenta si
-          olvidas tu contrasena.
-        </p>
-        <pre style={{ fontSize: "1.25rem", padding: "1rem", background: "#1c2530" }}>
-          {recoveryCode}
-        </pre>
-        <button onClick={() => router.push("/")}>Continuar</button>
-      </main>
+      <Card>
+        <CardHeader>
+          <CardTitle>Cuenta creada</CardTitle>
+          <CardDescription>
+            Guarda este codigo de recuperacion en un lugar seguro. No se mostrara de nuevo y es la
+            unica forma de recuperar tu cuenta si olvidas tu contrasena.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre className="overflow-x-auto rounded-md bg-muted p-4 text-center text-lg font-semibold tracking-wide text-foreground">
+            {recoveryCode}
+          </pre>
+        </CardContent>
+        <CardFooter>
+          <Button className="w-full" onClick={() => router.push("/")}>
+            Continuar
+          </Button>
+        </CardFooter>
+      </Card>
     );
   }
 
   return (
-    <main style={{ padding: "2rem", maxWidth: 480 }}>
-      <h1>Crear cuenta</h1>
+    <Card>
+      <CardHeader>
+        <CardTitle>Crear cuenta</CardTitle>
+        <CardDescription>Sin email ni datos personales, solo un alias.</CardDescription>
+      </CardHeader>
       <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="alias">Alias</label>
-          <input
-            id="alias"
-            value={alias}
-            onChange={(e) => setAlias(e.target.value)}
-            minLength={3}
-            maxLength={32}
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="password">Contrasena</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            minLength={10}
-            required
-          />
-        </div>
-        {error ? <p role="alert">{error}</p> : null}
-        <button type="submit" disabled={loading}>
-          {loading ? "Creando..." : "Crear cuenta"}
-        </button>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alias">Alias</Label>
+            <Input
+              id="alias"
+              value={alias}
+              onChange={(e) => setAlias(e.target.value)}
+              minLength={3}
+              maxLength={32}
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="password">Contrasena</Label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={10}
+              required
+            />
+          </div>
+          {error ? (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {error}
+            </p>
+          ) : null}
+        </CardContent>
+        <CardFooter className="flex-col gap-3">
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Creando..." : "Crear cuenta"}
+          </Button>
+          <p className="text-center text-sm text-muted-foreground">
+            Ya tienes cuenta?{" "}
+            <Link href="/login" className="font-medium text-primary hover:underline">
+              Inicia sesion
+            </Link>
+          </p>
+        </CardFooter>
       </form>
-    </main>
+    </Card>
   );
 }

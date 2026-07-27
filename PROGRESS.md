@@ -5,7 +5,7 @@
 
 ## Estado actual
 
-**Fase completada: Fase 2 — Grupos y subgrupos.**
+**Fase completada: Fase 2.5 — Sistema de diseno (UI/UX) con TailwindCSS.**
 Pendiente confirmacion del usuario para iniciar Fase 3 (Gastos y repartos).
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
@@ -368,6 +368,49 @@ navegador para diagnosticarlo).
 
 
 
+## Fase 2.5 — Sistema de diseno (UI/UX) con TailwindCSS (completada)
+
+Ver `design-system.md` para el detalle completo (tokens, tabla de
+contraste WCAG con las 22 combinaciones verificadas, catalogo de
+componentes). Resumen de decisiones clave:
+
+- **Tailwind CSS v4.3.3** (no v3): version real vigente en el registro de
+  npm; v3 esta en mantenimiento. v4 cambia el flujo de configuracion por
+  completo (CSS-first via `@theme`, sin `tailwind.config.ts`, sin
+  `autoprefixer` separado — todo integrado en `@tailwindcss/postcss` con
+  Lightning CSS). Documentado en detalle en `design-system.md` el porque
+  de la desviacion respecto al flujo v3 pedido literalmente.
+- **shadcn/ui** como base de componentes: patron "copiar codigo tipado",
+  no dependencia opaca. Construido a mano (sin ejecutar el CLI `shadcn
+  init`, que requiere red+pnpm) sobre primitivos reales
+  `@radix-ui/react-*` para accesibilidad ARIA correcta de fabrica.
+- **next-themes** para tema claro/oscuro/sistema, persistencia en
+  localStorage automatica, `prefers-color-scheme` respetado por defecto.
+  Selector visible (`ThemeToggle`) en el header de todas las paginas.
+- **Paleta verificada matematicamente**: `scripts/check-contrast.mjs`
+  implementa la formula oficial de luminancia relativa WCAG 2.1 (sin
+  dependencias externas) y confirma que las 22 combinaciones
+  fondo/texto usadas cumplen AA (14 de ellas AAA). El primer intento de
+  color de borde interactivo fallo (1.48:1 / 1.86:1) y se corrigio a
+  `#64748b`, reverificado antes de usarse — proceso de iteracion
+  documentado en `design-system.md`.
+- **Componentes creados** en `src/components/ui/`: Button, Input, Label,
+  Select, Card, Dialog, Badge, Avatar, Switch, DropdownMenu, Table,
+  Skeleton, Toaster (sonner). Todos tipados, con variantes via
+  `class-variance-authority`, accesibles por teclado y con foco visible.
+- **Pantallas migradas**: `layout.tsx` (ThemeProvider + Toaster),
+  `register`/`login`/`recover` (Card + Input + Label + Button), `groups`
+  y `groups/[groupId]` (Card, Table, Badge, Avatar, Skeleton, toasts de
+  `sonner` en vez de errores inline). Nuevo `SiteHeader` compartido
+  (logo, nav, ThemeToggle, sesion/logout) usado en layouts `(auth)` y
+  `(app)`.
+- **Lighthouse/axe-core**: NO ejecutado (requiere `pnpm build`/`pnpm
+  start` + navegador, no disponibles en este entorno). Instrucciones
+  exactas para ejecutarlo dejadas en `design-system.md`; pendiente de
+  verificacion real por el usuario.
+
+## Proximos pasos (Fase 3 — Gastos y repartos)
+
 - Modelo `expenses` / `expense_shares` ya definido en el esquema (Fase 0)
   con patron Strategy via enum `split_method` (`equal`/`percentage`/`fixed`).
 - Implementar validacion de que la suma de `expense_shares.share_amount`
@@ -378,3 +421,6 @@ navegador para diagnosticarlo).
 - Reutilizar `requireMembership`/`requireGroupAdmin` de Fase 2 para
   autorizacion; usar `db.transaction` (ya disponible con neon-serverless)
   para crear expense+shares atomicamente.
+- Usar los componentes ya creados en Fase 2.5 (`Select` para
+  moneda/metodo de reparto, `Table` para el listado de gastos, `Dialog`
+  para el formulario de alta) en vez de crear estilos nuevos.
