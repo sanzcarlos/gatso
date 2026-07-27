@@ -6,7 +6,7 @@ import { Toaster as Sonner, type ToasterProps } from "sonner";
 
 function Toaster({ theme: themeProp, ...props }: ToasterProps) {
   const { theme: systemTheme = "system" } = useTheme();
-  const theme = (themeProp ?? systemTheme) as ToasterProps["theme"];
+  const theme = (themeProp ?? systemTheme) as NonNullable<ToasterProps["theme"]>;
 
   return (
     <Sonner
