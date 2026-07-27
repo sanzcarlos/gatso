@@ -44,7 +44,7 @@ export async function listSubgroups(groupId: string, userId: string) {
   return db.select().from(subgroups).where(eq(subgroups.groupId, groupId));
 }
 
-async function getSubgroupInGroup(groupId: string, subgroupId: string) {
+export async function getSubgroupInGroup(groupId: string, subgroupId: string) {
   const [subgroup] = await db
     .select()
     .from(subgroups)

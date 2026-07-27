@@ -1,0 +1,321 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { apiFetch } from "@/lib/api/client-fetch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Plus } from "lucide-react";
+
+interface Member {
+  userId: string;
+  alias: string;
+}
+
+interface Currency {
+  code: string;
+  name: string;
+  symbol: string;
+}
+
+interface Subgroup {
+  id: string;
+  name: string;
+}
+
+type SplitMethod = "equal" | "percentage" | "fixed";
+
+interface ParticipantRow {
+  included: boolean;
+  value: string;
+}
+
+export function ExpenseFormDialog({
+  groupId,
+  members,
+  subgroups,
+  onCreated,
+}: {
+  groupId: string;
+  members: Member[];
+  subgroups: Subgroup[];
+  onCreated: () => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [amount, setAmount] = useState("");
+  const [currencyCode, setCurrencyCode] = useState("EUR");
+  const [description, setDescription] = useState("");
+  const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [payerId, setPayerId] = useState<string>(members[0]?.userId ?? "");
+  const [subgroupId, setSubgroupId] = useState<string>("none");
+  const [method, setMethod] = useState<SplitMethod>("equal");
+  const [rows, setRows] = useState<Record<string, ParticipantRow>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    apiFetch("/api/currencies")
+      .then((r) => (r.ok ? r.json() : { currencies: [] }))
+      .then((data) => setCurrencies(data.currencies ?? []));
+  }, [open]);
+
+  useEffect(() => {
+    setRows((prev) => {
+      const next: Record<string, ParticipantRow> = {};
+      for (const member of members) {
+        next[member.userId] = prev[member.userId] ?? { included: true, value: "" };
+      }
+      return next;
+    });
+  }, [members]);
+
+  const totalIncluded = useMemo(
+    () => Object.values(rows).filter((r) => r.included).length,
+    [rows],
+  );
+
+  function toggleIncluded(userId: string) {
+    setRows((prev) => ({
+      ...prev,
+      [userId]: { ...prev[userId], included: !prev[userId]?.included },
+    }));
+  }
+
+  function setValue(userId: string, value: string) {
+    setRows((prev) => ({ ...prev, [userId]: { ...prev[userId], included: true, value } }));
+  }
+
+  function resetForm() {
+    setAmount("");
+    setDescription("");
+    setMethod("equal");
+    setSubgroupId("none");
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const included = Object.entries(rows).filter(([, row]) => row.included);
+    if (included.length === 0) {
+      toast.error("Selecciona al menos un participante");
+      return;
+    }
+
+    let split;
+    if (method === "equal") {
+      split = { method: "equal" as const, participantUserIds: included.map(([userId]) => userId) };
+    } else if (method === "percentage") {
+      split = {
+        method: "percentage" as const,
+        shares: included.map(([userId, row]) => ({ userId, percentage: row.value || "0" })),
+      };
+    } else {
+      split = {
+        method: "fixed" as const,
+        shares: included.map(([userId, row]) => ({ userId, amount: row.value || "0" })),
+      };
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/expenses`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount,
+          currencyCode,
+          description,
+          expenseDate,
+          payerId,
+          subgroupId: subgroupId === "none" ? undefined : subgroupId,
+          split,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo crear el gasto");
+        return;
+      }
+      toast.success("Gasto creado");
+      resetForm();
+      setOpen(false);
+      await onCreated();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>
+          <Plus />
+          Nuevo gasto
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Nuevo gasto</DialogTitle>
+          <DialogDescription>Registra quien pago y como se reparte entre el grupo.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="expense-amount">Importe</Label>
+              <Input
+                id="expense-amount"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="42.50"
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="expense-currency">Moneda</Label>
+              <Select value={currencyCode} onValueChange={setCurrencyCode}>
+                <SelectTrigger id="expense-currency">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(currencies.length > 0 ? currencies : [{ code: "EUR", name: "Euro", symbol: "€" }]).map(
+                    (currency) => (
+                      <SelectItem key={currency.code} value={currency.code}>
+                        {currency.code} ({currency.symbol})
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="expense-description">Descripcion</Label>
+            <Input
+              id="expense-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Cena del sabado"
+              maxLength={280}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="expense-date">Fecha</Label>
+              <Input
+                id="expense-date"
+                type="date"
+                value={expenseDate}
+                onChange={(e) => setExpenseDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="expense-payer">Pagador</Label>
+              <Select value={payerId} onValueChange={setPayerId}>
+                <SelectTrigger id="expense-payer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.map((member) => (
+                    <SelectItem key={member.userId} value={member.userId}>
+                      {member.alias}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {subgroups.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="expense-subgroup">Subgrupo (opcional)</Label>
+              <Select value={subgroupId} onValueChange={setSubgroupId}>
+                <SelectTrigger id="expense-subgroup">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Todo el grupo</SelectItem>
+                  {subgroups.map((subgroup) => (
+                    <SelectItem key={subgroup.id} value={subgroup.id}>
+                      {subgroup.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="expense-method">Metodo de reparto</Label>
+            <Select value={method} onValueChange={(value) => setMethod(value as SplitMethod)}>
+              <SelectTrigger id="expense-method">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="equal">Partes iguales</SelectItem>
+                <SelectItem value="percentage">Por porcentajes</SelectItem>
+                <SelectItem value="fixed">Por importes fijos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <p className="text-xs font-medium text-muted-foreground">
+              Participantes {method !== "equal" ? `(deben sumar ${method === "percentage" ? "100%" : "el importe total"})` : `(${totalIncluded} seleccionados)`}
+            </p>
+            {members.map((member) => {
+              const row = rows[member.userId] ?? { included: true, value: "" };
+              return (
+                <div key={member.userId} className="flex items-center gap-3">
+                  <Switch
+                    checked={row.included}
+                    onCheckedChange={() => toggleIncluded(member.userId)}
+                    aria-label={`Incluir a ${member.alias}`}
+                  />
+                  <span className="flex-1 text-sm text-foreground">{member.alias}</span>
+                  {method !== "equal" && row.included ? (
+                    <Input
+                      className="w-24"
+                      value={row.value}
+                      onChange={(e) => setValue(member.userId, e.target.value)}
+                      placeholder={method === "percentage" ? "33.33" : "10.00"}
+                      required
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          <DialogFooter>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Creando..." : "Crear gasto"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

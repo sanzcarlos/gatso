@@ -18,4 +18,7 @@ const pool = new Pool({ connectionString: env.DATABASE_URL });
 
 export const db = drizzle({ client: pool, schema });
 
+/** Tipo del cliente de transaccion interactiva (`db.transaction(async (tx) => ...)`). */
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export * from "./schema";

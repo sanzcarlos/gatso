@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ExpenseFormDialog } from "./expense-form-dialog";
 
 interface GroupDetail {
   group: { id: string; name: string; inviteCode: string; maxMembers: number; maxSubgroups: number };
@@ -36,6 +37,25 @@ interface Subgroup {
   name: string;
 }
 
+interface ExpenseRow {
+  expense: {
+    id: string;
+    amount: string;
+    currencyCode: string;
+    description: string;
+    expenseDate: string;
+    splitMethod: "equal" | "percentage" | "fixed";
+    createdBy: string;
+  };
+  payerAlias: string;
+}
+
+const SPLIT_METHOD_LABEL: Record<ExpenseRow["expense"]["splitMethod"], string> = {
+  equal: "Partes iguales",
+  percentage: "Porcentajes",
+  fixed: "Importes fijos",
+};
+
 export default function GroupDetailClient({
   groupId,
   currentUserId,
@@ -46,20 +66,23 @@ export default function GroupDetailClient({
   const [detail, setDetail] = useState<GroupDetail | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [subgroups, setSubgroups] = useState<Subgroup[] | null>(null);
+  const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
   const [newSubgroupName, setNewSubgroupName] = useState("");
   const [creatingSubgroup, setCreatingSubgroup] = useState(false);
 
   const isAdmin = members?.find((m) => m.userId === currentUserId)?.role === "admin";
 
   const load = useCallback(async () => {
-    const [detailRes, membersRes, subgroupsRes] = await Promise.all([
+    const [detailRes, membersRes, subgroupsRes, expensesRes] = await Promise.all([
       apiFetch(`/api/groups/${groupId}`),
       apiFetch(`/api/groups/${groupId}/members`),
       apiFetch(`/api/groups/${groupId}/subgroups`),
+      apiFetch(`/api/groups/${groupId}/expenses`),
     ]);
     if (detailRes.ok) setDetail(await detailRes.json());
     if (membersRes.ok) setMembers((await membersRes.json()).members);
     if (subgroupsRes.ok) setSubgroups((await subgroupsRes.json()).subgroups);
+    if (expensesRes.ok) setExpenses((await expensesRes.json()).expenses);
   }, [groupId]);
 
   useEffect(() => {
@@ -98,6 +121,17 @@ export default function GroupDetailClient({
     await load();
   }
 
+  async function handleDeleteExpense(expenseId: string) {
+    const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}`, { method: "DELETE" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      toast.error(data.error ?? "No se pudo borrar el gasto");
+      return;
+    }
+    toast.success("Gasto borrado");
+    await load();
+  }
+
   if (!detail) {
     return (
       <div className="flex flex-col gap-4">
@@ -121,6 +155,68 @@ export default function GroupDetailClient({
         {detail.memberCount} / {detail.group.maxMembers} miembros · {detail.subgroupCount} /{" "}
         {detail.group.maxSubgroups} subgrupos
       </p>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Gastos</CardTitle>
+            <CardDescription>Historial de gastos del grupo, mas recientes primero.</CardDescription>
+          </div>
+          {members ? (
+            <ExpenseFormDialog
+              groupId={groupId}
+              members={members.map((m) => ({ userId: m.userId, alias: m.alias }))}
+              subgroups={subgroups ?? []}
+              onCreated={load}
+            />
+          ) : null}
+        </CardHeader>
+        <CardContent>
+          {expenses === null ? (
+            <Skeleton className="h-24 w-full" />
+          ) : expenses.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Todavia no hay gastos registrados.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Descripcion</TableHead>
+                  <TableHead>Pagador</TableHead>
+                  <TableHead>Reparto</TableHead>
+                  <TableHead className="text-right">Importe</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {expenses.map(({ expense, payerAlias }) => {
+                  const canDelete = isAdmin || expense.createdBy === currentUserId;
+                  return (
+                    <TableRow key={expense.id}>
+                      <TableCell className="whitespace-nowrap">{expense.expenseDate}</TableCell>
+                      <TableCell>{expense.description}</TableCell>
+                      <TableCell>{payerAlias}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{SPLIT_METHOD_LABEL[expense.splitMethod]}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {expense.amount} {expense.currencyCode}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {canDelete ? (
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>
+                            Borrar
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

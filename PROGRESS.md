@@ -5,8 +5,8 @@
 
 ## Estado actual
 
-**Fase completada: Fase 2.5 — Sistema de diseno (UI/UX) con TailwindCSS.**
-Pendiente confirmacion del usuario para iniciar Fase 3 (Gastos y repartos).
+**Fase completada: Fase 3 — Gastos y repartos.**
+Pendiente confirmacion del usuario para iniciar Fase 4 (Seguridad y permisos).
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -409,18 +409,157 @@ componentes). Resumen de decisiones clave:
   exactas para ejecutarlo dejadas en `design-system.md`; pendiente de
   verificacion real por el usuario.
 
-## Proximos pasos (Fase 3 — Gastos y repartos)
+## Fase 3 — Gastos y repartos (completada)
 
-- Modelo `expenses` / `expense_shares` ya definido en el esquema (Fase 0)
-  con patron Strategy via enum `split_method` (`equal`/`percentage`/`fixed`).
-- Implementar validacion de que la suma de `expense_shares.share_amount`
-  coincide exactamente con `expenses.amount` (aritmetica decimal exacta,
-  cuidado con redondeos — usar centimos enteros internamente o `Decimal`).
-- Rate limiting configurable (1 gasto cada 30s por usuario) leyendo
-  `app_config` con fallback a `env.RATE_LIMIT_EXPENSE_CREATION_SECONDS`.
-- Reutilizar `requireMembership`/`requireGroupAdmin` de Fase 2 para
-  autorizacion; usar `db.transaction` (ya disponible con neon-serverless)
-  para crear expense+shares atomicamente.
-- Usar los componentes ya creados en Fase 2.5 (`Select` para
-  moneda/metodo de reparto, `Table` para el listado de gastos, `Dialog`
-  para el formulario de alta) en vez de crear estilos nuevos.
+### Aritmetica de dinero: centimos enteros, no coma flotante
+
+`src/lib/money.ts` implementa toda la aritmetica de repartos en **centimos
+enteros** (`number`, seguro para estos importes) en vez de decimales en
+coma flotante — `0.1 + 0.2 !== 0.3` en JS, y un error de redondeo en un
+reparto de gastos es un bug de integridad de datos, no un detalle
+cosmetico. Funciones: `parseAmountToCents`/`centsToAmount` (conversion
+string↔centimos), `parsePercentageToBasisPoints` (porcentaje↔puntos base
+enteros sobre 10000), `distributeEqually` (reparto igualitario asignando
+el resto de centimos a las primeras posiciones), `distributeByBasisPoints`
+(metodo del **resto mayor / Hamilton** para repartir por porcentajes sin
+perder ni anadir centimos), `assertExactSum` (valida que un reparto por
+importes fijos sume exactamente el total). Todo cubierto por tests reales
+en `src/lib/money.test.ts` (Vitest).
+
+### Patron Strategy real para metodos de reparto
+
+`src/lib/expenses/split-strategies.ts` implementa el patron Strategy
+pedido explicitamente: un `Record<SplitInput["method"], SplitStrategy>`
+mapea cada metodo (`equal`/`percentage`/`fixed`) a su funcion de calculo,
+todas con la misma firma `(totalCents, split) => ComputedShare[]`. Anadir
+un metodo nuevo en el futuro (ej. "por consumo/unidades") solo requiere
+escribir una funcion nueva y registrarla en el mapa — no toca el modelo de
+datos (`expenses`/`expense_shares` ya son agnosticos al metodo, definidos
+en Fase 0) ni las rutas API. `computeShares()` ademas verifica que ningun
+usuario aparezca dos veces en el mismo reparto. Tests en
+`split-strategies.test.ts`.
+
+### Validacion (Zod v4) — discriminated union por metodo
+
+`src/lib/validation/expenses.ts` usa `z.discriminatedUnion("method", [...])`
+sobre el campo `method` para validar la forma exacta de cada tipo de
+reparto (verificado contra la documentacion oficial de Zod: la API es
+identica en v4, con anadidos como composicion de discriminated unions).
+Regex de formato para importes (`AMOUNT_REGEX`) y porcentajes
+(`PERCENTAGE_REGEX`); refinamiento adicional para exigir importe total
+`> 0`. Nota de deuda tecnica menor: se sigue usando `z.string().uuid()`
+(metodo encadenado) por consistencia con el resto del codebase (Fases 1/2);
+Zod v4 lo marca **deprecado** en favor de `z.uuid()` top-level pero
+**sigue funcionando** (se eliminara en la siguiente major, no en v4). No
+bloqueante; se puede migrar en un pase de limpieza futuro.
+
+### Servicio de gastos (`src/lib/expenses/service.ts`)
+
+- `createExpense`: verifica membresia del actor, moneda activa, subgrupo
+  (si aplica) y que el pagador sea miembro; valida que **todos** los
+  participantes del reparto sean miembros del grupo (y del subgrupo, si el
+  gasto esta scoped a uno) via `assertParticipantsBelongToScope`; calcula
+  los repartos con `computeShares` **antes** de abrir la transaccion
+  (evita trabajo de BD si la validacion de negocio falla); dentro de la
+  transaccion (`db.transaction`, soportada gracias al driver
+  `neon-serverless` elegido en Fase 2) aplica el rate limit y crea
+  `expenses` + `expense_shares` atomicamente.
+- `listExpenses`, `getExpenseDetail`, `deleteExpense` (regla de permisos
+  de Fase 4 adelantada aqui porque es inseparable de la propia entidad:
+  solo el creador del gasto o el admin del grupo pueden borrarlo).
+
+### Rate limiting configurable (`src/lib/expenses/rate-limit.ts`)
+
+Limite global (no por grupo) de 1 gasto cada N segundos por usuario.
+`getExpenseCreationRateLimitSeconds()` lee la clave
+`expense_creation_rate_limit_seconds` de la tabla `app_config` (ajustable
+en runtime sin redeploy, ej. via `drizzle-kit studio` o SQL directo) con
+fallback a `env.RATE_LIMIT_EXPENSE_CREATION_SECONDS` (por defecto 30s) si
+no hay fila o el valor no es un numero positivo valido. La comprobacion
+ocurre **dentro** de la misma transaccion de creacion del gasto para
+minimizar la ventana de doble envio.
+
+### Monedas (adelanto minimo de Fase 6)
+
+`src/lib/currencies/service.ts`: `listActiveCurrencies` y
+`requireActiveCurrency` (usado por `createExpense` para rechazar monedas
+no soportadas/inactivas). La gestion completa del catalogo (alta,
+limite de 16 monedas activas) es objeto de Fase 6; aqui solo lo minimo
+necesario para que un gasto pueda validar su moneda.
+
+### Seed de monedas iniciales
+
+`src/db/seed.ts` (`pnpm db:seed`, ejecutado con `tsx`) inserta EUR y USD
+en la tabla `currencies` si no existen ya (idempotente). Verificado que
+`tsx` resuelve automaticamente los path aliases de `tsconfig.json`
+(`@/*`) via `get-tsconfig`/`resolvePathAlias` internamente (confirmado
+inspeccionando el codigo fuente publicado de `privatenumber/tsx`), asi
+que el script puede importar `./index` (que a su vez usa `@/lib/env`)
+sin configuracion adicional. El script carga `.env.local`/`.env`
+explicitamente con `dotenv` antes del import (mismo patron que
+`drizzle.config.ts` de Fase 1) para garantizar que `DATABASE_URL` este
+disponible cuando se evalua `src/lib/env.ts`.
+
+### Rutas API (todas `runtime = "nodejs"`, protegidas con `requireSession`)
+
+- `GET|POST /api/groups/[groupId]/expenses` — listar (con filtro opcional
+  `?subgroupId=`) / crear.
+- `GET|DELETE /api/groups/[groupId]/expenses/[expenseId]` — detalle
+  (incluye repartos por usuario) / borrar.
+- `GET /api/currencies` — catalogo de monedas activas (usado por el
+  selector de moneda en el formulario de alta).
+
+### UI (usa el sistema de diseno de Fase 2.5, no estilos nuevos)
+
+- `src/app/(app)/groups/[groupId]/expense-form-dialog.tsx`: `Dialog` con
+  formulario completo — importe, moneda (`Select` poblado desde
+  `/api/currencies`), descripcion, fecha, pagador, subgrupo opcional,
+  metodo de reparto (`Select`) y una fila por miembro con `Switch`
+  "incluir" + campo de porcentaje/importe segun el metodo elegido.
+- `group-detail-client.tsx` ampliado con una tarjeta "Gastos": tabla
+  (`Table`) con fecha/descripcion/pagador/metodo (`Badge`)/importe y
+  boton "Borrar" visible solo si el usuario puede borrar ese gasto
+  (creador o admin del grupo — regla de Fase 4 aplicada ya en el
+  servicio y reflejada aqui).
+
+### Testing (adelanto de Fase 9 para la logica mas critica)
+
+Se anadio `vitest.config.ts` (no existia) con el plugin
+`vite-tsconfig-paths` para que los tests resuelvan el alias `@/*` sin
+duplicar configuracion; nuevas dependencias `vite`, `vite-tsconfig-paths`
+(dev). Tests reales (no ficticios) cubriendo la logica de dinero y de
+repartos: `src/lib/money.test.ts`, `src/lib/expenses/split-strategies.test.ts`.
+Ejecutar con `pnpm test`. Estos tests son puros (no tocan la base de
+datos), por lo que corren sin `DATABASE_URL` configurado.
+
+### Pendiente / bloqueos que persisten
+
+- Sigue sin poder ejecutarse `pnpm install`/`pnpm build`/`pnpm test` en
+  el entorno de desarrollo original (pnpm bloqueado); el usuario ha
+  confirmado en la conversacion que `pnpm build` funciona ya en su
+  maquina tras corregir los errores de tipos de Fase 2.5 — se recomienda
+  ejecutar `pnpm test` tras `pnpm install` para verificar los tests
+  nuevos de esta fase antes de continuar.
+- No se implemento un endpoint para editar/actualizar un gasto existente
+  (solo crear/listar/detalle/borrar) — no estaba en el alcance explicito
+  de esta fase; se puede anadir como mejora futura reutilizando
+  `computeShares` y `assertParticipantsBelongToScope`.
+- No se implemento vista de "balances" (quien debe a quien) — el
+  enunciado de Fase 3 pedia el alta de gastos y los metodos de reparto,
+  no un calculo de liquidacion; se puede abordar en una fase posterior si
+  se solicita explicitamente.
+
+## Proximos pasos (Fase 4 — Seguridad y permisos)
+
+- La regla de borrado (creador o admin) ya esta implementada en
+  `deleteExpense` (Fase 3, adelantada por ser inseparable de la entidad).
+  Verificar/reforzar que se aplique de forma consistente tambien a
+  ediciones futuras y a nivel de middleware/servicio, no solo frontend.
+- Proteccion contra manipulacion de IDs: revisar que **todas** las rutas
+  con `[groupId]`/`[subgroupId]`/`[expenseId]` verifiquen pertenencia
+  real (ya se hace via `requireMembership`/`getSubgroupInGroup`/ownership
+  checks en cada servicio, pero Fase 4 pide una revision sistematica y
+  quiza un middleware/helper comun).
+- Considerar mover la logica de autorizacion repetida
+  (`requireMembership` + comprobaciones de scope) a un layer explicito de
+  middleware de API si se detecta duplicacion significativa.

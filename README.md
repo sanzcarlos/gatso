@@ -26,6 +26,7 @@ pnpm install
 cp .env.example .env.local   # completar DATABASE_URL, AUTH_SECRET, etc.
 pnpm db:generate             # genera migraciones SQL a partir de src/db/schema
 pnpm db:migrate              # aplica migraciones contra DATABASE_URL
+pnpm db:seed                 # inserta monedas iniciales (EUR, USD)
 pnpm dev                     # http://localhost:3000
 ```
 
@@ -46,6 +47,7 @@ pnpm dev                     # http://localhost:3000
 | `pnpm db:generate` | Genera migraciones Drizzle a partir del esquema |
 | `pnpm db:migrate` | Aplica migraciones pendientes |
 | `pnpm db:studio` | UI de inspeccion de la base de datos |
+| `pnpm db:seed` | Inserta monedas iniciales (EUR, USD) si no existen |
 
 ## Despliegue
 
