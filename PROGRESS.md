@@ -5,8 +5,8 @@
 
 ## Estado actual
 
-**Fase completada: Fase 1 — Autenticacion y privacidad.**
-Pendiente confirmacion del usuario para iniciar Fase 2 (Grupos y subgrupos).
+**Fase completada: Fase 2 — Grupos y subgrupos.**
+Pendiente confirmacion del usuario para iniciar Fase 3 (Gastos y repartos).
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -226,12 +226,121 @@ en v16 a favor del CLI de ESLint directo (`pnpm lint` → `eslint .`).
 - No hay verificacion de fuerza de contrasena mas alla de longitud minima
   (10 caracteres); se considera suficiente para el alcance actual.
 
-## Proximos pasos (Fase 2 — Grupos y subgrupos)
+## Fase 2 — Grupos y subgrupos (completada)
 
-- CRUD de grupos con limite 64 miembros / 32 subgrupos (constraints ya
-  reflejadas en el esquema `groups.max_members` / `groups.max_subgroups`,
-  falta la logica de validacion en servicio).
-- Roles admin/miembro (enum `member_role` ya existe en `memberships`).
-- Invitacion por codigo/enlace (`groups.invite_code` ya existe en el
-  esquema) sin exponer datos personales de los miembros.
-- Proteger las nuevas rutas con `requireSession()` de Fase 1.
+### Decision revisada: driver Neon `neon-serverless` (WebSocket/Pool) en vez de `neon-http`
+
+Verificado contra la documentacion oficial de Drizzle (`orm.drizzle.team/docs/connect-neon`
+y `.../docs/transactions`): **el driver `neon-http` solo soporta consultas HTTP
+individuales no interactivas; no soporta `db.transaction()` con multiples
+pasos condicionales**. Cita textual de los docs: *"Querying over HTTP is
+faster for single, non-interactive transactions. If you need session or
+interactive transaction support [...] you can use the WebSocket-based
+`neon-serverless` driver."*
+
+Gatso necesita transacciones interactivas reales para varias operaciones
+criticas de integridad (crear grupo+membresia admin atomicamente, mas
+adelante crear gasto+repartos en Fase 3, rotar codigo de recuperacion
+junto al futuro registro de auditoria en Fase 5). Por tanto, en `src/db/index.ts`
+se sustituyo `neon()` + `drizzle-orm/neon-http` por `Pool` (WebSocket) +
+`drizzle-orm/neon-serverless`, con `neonConfig.webSocketConstructor = ws`
+(paquete `ws` + `bufferutil` anadidos como dependencias, siguiendo el
+snippet oficial para entornos Node.js). Como todas las rutas de API ya
+fijan `export const runtime = "nodejs"` (requerido por `argon2` desde
+Fase 1), esto es compatible sin cambios adicionales de runtime.
+
+### Control de concurrencia con `SELECT ... FOR UPDATE`
+
+Para evitar condiciones de carrera al comprobar limites (64 miembros/grupo,
+32 subgrupos/grupo) bajo peticiones concurrentes, `joinGroupByInviteCode` y
+`createSubgroup` bloquean la fila del grupo con `.for("update")` dentro de
+la transaccion antes de contar y insertar. Verificado que `.for("update")`
+es una API real y ampliamente usada de `drizzle-orm/pg-core` (confirmado
+via busqueda de codigo publico, no solo documentacion).
+
+### Servicio de grupos (`src/lib/groups/service.ts`)
+
+- `createGroup(userId, name)` — transaccion: inserta grupo con codigo de
+  invitacion aleatorio (`generateInviteCode`, alfabeto sin ambiguedades) +
+  membresia `admin` para el creador. Reintenta hasta 5 veces si el codigo
+  colisiona (deteccion via `isUniqueViolation`, SQLSTATE `23505`).
+- `requireMembership` / `requireGroupAdmin` — helpers de autorizacion que
+  lanzan `AppError` (403) si no se cumple la condicion; reutilizados en
+  todos los servicios de grupos/subgrupos/gastos futuros.
+- `listUserGroups`, `getGroupDetail` (incluye contador de miembros y
+  subgrupos), `updateGroupName` (solo admin).
+- `joinGroupByInviteCode` — transaccion con bloqueo de fila, valida que no
+  se supere `maxMembers` (64) y que el usuario no sea ya miembro.
+- `listMembers`, `removeMember` (solo admin; un admin no puede
+  autoeliminarse por esta via, evita dejar el grupo sin admin implicito;
+  gestion completa de "abandonar grupo" queda fuera de alcance de esta
+  fase, se revisara si se pide explicitamente).
+
+### Servicio de subgrupos (`src/lib/groups/subgroup-service.ts`)
+
+- `createSubgroup` — transaccion con bloqueo de fila del grupo, valida
+  `maxSubgroups` (32) y nombre unico por grupo (constraint
+  `subgroups_group_name_unique` ya existente desde Fase 0); el creador se
+  anade automaticamente como miembro del subgrupo.
+- Cualquier miembro del grupo puede crear subgrupos y anadir a otros
+  miembros del grupo (no externos) a un subgrupo — decision de diseno
+  documentada aqui: el enunciado solo definia roles a nivel de grupo, no
+  restricciones de creacion de subgrupos.
+- `removeSubgroupMember` — un usuario puede eliminarse a si mismo del
+  subgrupo; solo el admin del grupo puede eliminar a otros.
+
+### Rutas API (todas con `runtime = "nodejs"`, protegidas con `requireSession`)
+
+- `POST /api/groups`, `GET /api/groups` — crear / listar grupos propios.
+- `POST /api/groups/join` — unirse via codigo de invitacion.
+- `GET /api/groups/[groupId]`, `PATCH /api/groups/[groupId]` — detalle /
+  renombrar (admin).
+- `GET /api/groups/[groupId]/members`,
+  `DELETE /api/groups/[groupId]/members/[userId]` — listar / expulsar (admin).
+- `GET /api/groups/[groupId]/subgroups`,
+  `POST /api/groups/[groupId]/subgroups` — listar / crear subgrupo.
+- `GET|POST /api/groups/[groupId]/subgroups/[subgroupId]/members`,
+  `DELETE .../members/[userId]` — gestion de miembros de subgrupo.
+
+Todas usan el patron `params: Promise<{...}>` (API dinamica async de
+Next.js 15+/16) y devuelven errores via `errorResponse()` que traduce
+`AppError` a JSON + status code consistente.
+
+### UI minima
+
+- `/groups` (server component + `groups-client.tsx`): listar grupos
+  propios, formulario crear grupo, formulario unirse por codigo.
+- `/groups/[groupId]` (server component + `group-detail-client.tsx`):
+  detalle, contadores, lista de miembros (boton eliminar si eres admin),
+  lista y creacion de subgrupos.
+- Ambas paginas server-side redirigen a `/login` si no hay sesion
+  (`getSession()`), siguiendo el patron ya usado en `/`.
+
+### Pendiente / bloqueos que persisten
+
+- `pnpm install` sigue bloqueado en este entorno de desarrollo; nada de lo
+  anterior se ha compilado ni ejecutado en runtime real. Nuevas
+  dependencias anadidas en esta fase: `ws@^8.21.1`, `bufferutil@^4.1.0`
+  (runtime) y `@types/ws@^8.18.1` (dev) — todas verificadas contra el
+  registro de npm.
+- No se implemento "abandonar grupo" (un miembro saliendo voluntariamente)
+  ni transferencia de rol admin; no estaba en el alcance explicito de esta
+  fase y anadiria complejidad (grupo sin admin). Se puede pedir como mejora
+  futura.
+- La auditoria de estas operaciones (quien creo/renombro/elimino que) se
+  implementara en Fase 5 tal como estaba planificado; los servicios estan
+  escritos de forma que sera facil anadir un `tx.insert(auditLogs)` dentro
+  de las mismas transacciones existentes.
+
+## Proximos pasos (Fase 3 — Gastos y repartos)
+
+- Modelo `expenses` / `expense_shares` ya definido en el esquema (Fase 0)
+  con patron Strategy via enum `split_method` (`equal`/`percentage`/`fixed`).
+- Implementar validacion de que la suma de `expense_shares.share_amount`
+  coincide exactamente con `expenses.amount` (aritmetica decimal exacta,
+  cuidado con redondeos — usar centimos enteros internamente o `Decimal`).
+- Rate limiting configurable (1 gasto cada 30s por usuario) leyendo
+  `app_config` con fallback a `env.RATE_LIMIT_EXPENSE_CREATION_SECONDS`.
+- Reutilizar `requireMembership`/`requireGroupAdmin` de Fase 2 para
+  autorizacion; usar `db.transaction` (ya disponible con neon-serverless)
+  para crear expense+shares atomicamente.

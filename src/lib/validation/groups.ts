@@ -1,0 +1,37 @@
+import { z } from "zod";
+
+export const GROUP_MAX_MEMBERS = 64;
+export const GROUP_MAX_SUBGROUPS = 32;
+
+export const groupNameSchema = z
+  .string()
+  .trim()
+  .min(1, "El nombre del grupo es obligatorio")
+  .max(64, "El nombre del grupo no puede superar 64 caracteres");
+
+export const subgroupNameSchema = z
+  .string()
+  .trim()
+  .min(1, "El nombre del subgrupo es obligatorio")
+  .max(64, "El nombre del subgrupo no puede superar 64 caracteres");
+
+export const createGroupSchema = z.object({
+  name: groupNameSchema,
+});
+
+export const updateGroupSchema = z.object({
+  name: groupNameSchema,
+});
+
+export const createSubgroupSchema = z.object({
+  name: subgroupNameSchema,
+});
+
+export const joinGroupSchema = z.object({
+  inviteCode: z.string().trim().min(1, "El codigo de invitacion es obligatorio"),
+});
+
+export type CreateGroupInput = z.infer<typeof createGroupSchema>;
+export type UpdateGroupInput = z.infer<typeof updateGroupSchema>;
+export type CreateSubgroupInput = z.infer<typeof createSubgroupSchema>;
+export type JoinGroupInput = z.infer<typeof joinGroupSchema>;

@@ -11,7 +11,8 @@ export default async function HomePage() {
 
       {session ? (
         <p>
-          Sesion activa como <strong>{session.alias}</strong>.
+          Sesion activa como <strong>{session.alias}</strong>.{" "}
+          <Link href="/groups">Ver mis grupos</Link>
         </p>
       ) : (
         <nav>
