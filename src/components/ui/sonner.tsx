@@ -4,12 +4,13 @@ import type { CSSProperties } from "react";
 import { useTheme } from "next-themes";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
-function Toaster({ ...props }: ToasterProps) {
-  const { theme = "system" } = useTheme();
+function Toaster({ theme: themeProp, ...props }: ToasterProps) {
+  const { theme: systemTheme = "system" } = useTheme();
+  const theme = (themeProp ?? systemTheme) as ToasterProps["theme"];
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={theme}
       className="toaster group"
       style={
         {
