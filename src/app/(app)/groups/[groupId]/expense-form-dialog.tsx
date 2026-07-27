@@ -95,14 +95,17 @@ export function ExpenseFormDialog({
   );
 
   function toggleIncluded(userId: string) {
-    setRows((prev) => ({
-      ...prev,
-      [userId]: { ...prev[userId], included: !prev[userId]?.included },
-    }));
+    setRows((prev) => {
+      const current = prev[userId] ?? { included: true, value: "" };
+      return { ...prev, [userId]: { ...current, included: !current.included } };
+    });
   }
 
   function setValue(userId: string, value: string) {
-    setRows((prev) => ({ ...prev, [userId]: { ...prev[userId], included: true, value } }));
+    setRows((prev) => {
+      const current = prev[userId] ?? { included: true, value: "" };
+      return { ...prev, [userId]: { ...current, included: true, value } };
+    });
   }
 
   function resetForm() {
