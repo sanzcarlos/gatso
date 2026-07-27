@@ -29,6 +29,10 @@ pnpm db:migrate              # aplica migraciones contra DATABASE_URL
 pnpm dev                     # http://localhost:3000
 ```
 
+> `drizzle.config.ts` carga `.env.local` y `.env` explicitamente con
+> `dotenv` porque `drizzle-kit` (a diferencia de `next dev`) no conoce la
+> convencion `.env.local` de Next.js por si solo.
+
 ## Scripts
 
 | Script | Descripcion |
