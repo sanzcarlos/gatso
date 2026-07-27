@@ -1,0 +1,33 @@
+# Dependencias
+node_modules
+.pnpm-store
+
+# Next.js
+.next/
+out/
+
+# Build / cache
+*.tsbuildinfo
+.turbo
+
+# Entorno
+.env
+.env.local
+.env.*.local
+
+# Drizzle
+drizzle/*.sql.bak
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Vercel
+.vercel

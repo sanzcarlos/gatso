@@ -1,0 +1,237 @@
+# PROGRESS.md — Gatso (control de gastos compartidos)
+
+> Memoria persistente del proyecto. Leer este fichero al inicio de cada fase
+> en vez de recorrer el codigo completo. Se actualiza al cierre de cada fase.
+
+## Estado actual
+
+**Fase completada: Fase 1 — Autenticacion y privacidad.**
+Pendiente confirmacion del usuario para iniciar Fase 2 (Grupos y subgrupos).
+
+## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
+
+- Node.js **26.x** (LTS mas reciente en la fecha de trabajo)
+- TypeScript **7.0.2** (compilador nativo, `type: module`, estricto)
+- Next.js **16.2.12** (App Router), React **19.2.0**
+- Gestor de paquetes: **pnpm 11.17.0**, fijado en `packageManager` de `package.json`
+- ORM: **Drizzle ORM** sobre **Neon serverless Postgres** (`@neondatabase/serverless`, driver HTTP)
+- Validacion: **zod 4**
+- Hash de contrasenas: **argon2** (Fase 1)
+- Sesiones: JWT firmado con **jose** + cookie httpOnly (Fase 1)
+
+## Decision de base de datos (justificacion)
+
+Se eligio **Neon Postgres (serverless) + Drizzle ORM** en lugar de Prisma:
+
+- Drizzle no requiere un binary engine nativo empaquetado (Prisma si lo
+  necesita), lo que evita problemas de cold-start y tamano de bundle en
+  Vercel Serverless/Edge Functions.
+- El driver `@neondatabase/serverless` funciona sobre HTTP/fetch, compatible
+  tanto con el runtime `nodejs` como con `edge` de Next.js, ideal para
+  funciones serverless de vida corta.
+- Drizzle genera SQL explicito y tipado, mas facil de auditar para los
+  requisitos de seguridad del proyecto (Fase 4/5).
+- Vercel Postgres es, a fecha de esta decision, una capa sobre Neon; usar
+  Neon directamente evita vendor lock-in adicional y funciona igual en
+  Vercel via variables de entorno (`DATABASE_URL`).
+
+## Estructura de carpetas (Next.js 16 App Router)
+
+```
+gatso/
+├── .npmrc                    # auto-install-peers=true, shamefully-hoist=false
+├── .env.example
+├── package.json              # packageManager pnpm@11.17.0, engines node>=26
+├── tsconfig.json             # strict, noUncheckedIndexedAccess, paths @/*
+├── next.config.ts
+├── vercel.json               # installCommand/buildCommand explicitos con pnpm
+├── drizzle.config.ts         # schema en src/db/schema, out en drizzle/
+├── src/
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   ├── globals.css
+│   │   └── api/health/route.ts   # healthcheck runtime nodejs
+│   ├── db/
+│   │   ├── index.ts          # cliente drizzle (neon-http)
+│   │   └── schema/
+│   │       ├── users.ts
+│   │       ├── currencies.ts
+│   │       ├── groups.ts
+│   │       ├── subgroups.ts
+│   │       ├── memberships.ts       # memberships + subgroup_memberships
+│   │       ├── expenses.ts          # expenses + expense_shares
+│   │       ├── audit-logs.ts
+│   │       ├── app-config.ts
+│   │       └── index.ts      # barrel
+│   ├── lib/
+│   │   └── env.ts            # validacion zod de variables de entorno
+│   └── types/                # (vacio, se llenara segun necesidad)
+└── public/icons/              # placeholders para PWA (Fase 7)
+```
+
+## Esquema de base de datos (entidades y relaciones)
+
+| Tabla | Descripcion | Claves / constraints relevantes |
+|---|---|---|
+| `users` | Usuario con alias (sin nombre real/email obligatorio) | `alias` unico; sin columna de IP |
+| `currencies` | Catalogo de monedas (EUR, USD iniciales) | PK `code` (ISO 4217); `is_active`; limite 16 activas validado en app |
+| `groups` | Grupo de gasto compartido | `invite_code` unico; `max_members`=64, `max_subgroups`=32 por defecto |
+| `subgroups` | Subgrupo dentro de un grupo | FK `group_id`; unico `(group_id, name)`; limite 32/grupo validado en app |
+| `memberships` | Usuario ⇄ Grupo con rol | enum `member_role` (`admin`,`member`); unico `(group_id, user_id)` |
+| `subgroup_memberships` | Usuario ⇄ Subgrupo | unico `(subgroup_id, user_id)` |
+| `expenses` | Gasto: pagador, importe, moneda, metodo de reparto | enum `split_method` (`equal`,`percentage`,`fixed`); FK moneda, grupo, subgrupo opcional |
+| `expense_shares` | Reparto del gasto por usuario | suma de `share_amount` debe igualar `expenses.amount` (validado en servicio, Fase 3) |
+| `audit_logs` | Auditoria inmutable (crear/editar/borrar) | jsonb `before_data`/`after_data`; inmutabilidad via regla/trigger SQL en Fase 5 |
+| `app_config` | Configuracion runtime (ej. rate limit) | `key` unico; permite cambiar limites sin redeploy |
+
+Notas de diseno:
+- El patron **Strategy** para repartos se modela con el enum `split_method`
+  en `expenses` + filas en `expense_shares`; anadir un metodo nuevo no
+  requiere migrar el esquema, solo nueva logica de calculo en el servicio.
+- La privacidad por diseno implica: no hay columna de nombre real ni email
+  obligatorio en `users`, no se guarda IP en ninguna tabla.
+- Las migraciones SQL (`drizzle/*.sql`) se generan con `pnpm db:generate` y
+  se aplican con `pnpm db:migrate`; **aun no generadas** (bloqueado, ver
+  "Bloqueos conocidos" abajo).
+
+## Variables de entorno (`.env.example`)
+
+- `DATABASE_URL` — cadena de conexion Neon/Postgres.
+- `AUTH_SECRET` — secreto para firmar JWT de sesion (Fase 1).
+- `AUTH_COOKIE_NAME` — nombre de la cookie httpOnly de sesion.
+- `RATE_LIMIT_EXPENSE_CREATION_SECONDS` — valor por defecto del rate limit
+  (30s); tambien puede overridearse en runtime via `app_config`.
+- `NODE_ENV`.
+
+## Configuracion pnpm
+
+- `packageManager: "pnpm@11.17.0"` fijado en `package.json`.
+- `.npmrc`: `auto-install-peers=true`, `shamefully-hoist=false` (no ha sido
+  necesaria ninguna excepcion hasta ahora).
+- `pnpm-lock.yaml` **no generado todavia** — ver bloqueo abajo. Se generara
+  al ejecutar `pnpm install` en un entorno sin la restriccion.
+- Proyecto mantenido como **paquete unico** (no monorepo/workspaces): a este
+  tamano no aporta beneficio dividir en `apps/*` + `packages/*`; se
+  reevaluara si aparece codigo compartido entre un futuro backend separado
+  y el frontend.
+
+## Bloqueos conocidos (importante)
+
+- El entorno de ejecucion usado durante el desarrollo de esta fase tenia
+  `pnpm.exe` bloqueado por politica de grupo de Windows (AppLocker/SRP) y
+  sin `npm`/`corepack` disponibles en el PATH. Por tanto:
+  - **No se ha ejecutado `pnpm install`** → no existe `pnpm-lock.yaml` ni
+    `node_modules` todavia.
+  - **No se han generado las migraciones SQL** (`pnpm db:generate`).
+  - **No se ha verificado con `pnpm build`/`pnpm dev`** que el proyecto
+    arranque; el codigo sigue los patrones estandar de Next.js 16 pero no
+    esta verificado en runtime.
+- Accion requerida por el usuario: ejecutar `pnpm install` (y opcionalmente
+  `pnpm dev`, `pnpm db:generate`) en una terminal sin esa restriccion antes
+  de continuar con Fase 1, o desbloquear `pnpm.exe` via politica de grupo.
+
+## Fase 1 — Autenticacion y privacidad (completada)
+
+### Decision clave: Next.js 16 renombra `middleware.ts` a `proxy.ts`
+
+Verificado contra la documentacion oficial (nextjs.org, version 16.2.12):
+desde v16.0.0 el fichero `middleware.ts` esta deprecado en favor de
+`proxy.ts` (funcion `proxy`, export default). **Desde v15.5 el runtime
+Node.js es estable y es el runtime por defecto de Proxy** (antes solo
+Edge), lo que permite usar `node:crypto` directamente sin trucos ni
+`experimental.nodeMiddleware`. Implementado en `src/proxy.ts`.
+
+### Registro/login (Argon2id + alias, sin datos personales)
+
+- `src/lib/auth/password.ts`: hash/verify con **argon2id** (params OWASP:
+  memoryCost 19456 KiB, timeCost 2, parallelism 1). Incluye `DUMMY_HASH`
+  (hash estatico valido) usado en login/recuperacion para que la respuesta
+  tarde lo mismo si el alias existe o no, mitigando timing attacks que
+  revelarian existencia de cuentas.
+- `src/lib/validation/auth.ts`: esquemas zod — alias 3-32 chars
+  `[a-zA-Z0-9_-]`, password minimo 10 caracteres. Sin campo de email ni
+  nombre real en ningun esquema (por diseno).
+- `src/app/api/auth/register/route.ts` — `POST`, crea usuario, genera codigo
+  de recuperacion (ver abajo), devuelve sesion + codigo (una sola vez).
+- `src/app/api/auth/login/route.ts` — `POST`, valida y crea sesion.
+- `src/app/api/auth/logout/route.ts` — `POST`, borra cookie de sesion.
+- `src/app/api/auth/me/route.ts` — `GET`, devuelve sesion actual o `null`.
+- Paginas cliente minimas: `src/app/(auth)/{register,login,recover}/page.tsx`.
+
+### Sesiones JWT + cookie httpOnly
+
+- `src/lib/auth/session.ts`: JWT firmado HS256 con **jose**, secreto
+  `env.AUTH_SECRET`, expiracion 30 dias. Cookie `httpOnly`, `sameSite=lax`,
+  `secure` en produccion, nombre configurable via `AUTH_COOKIE_NAME`.
+- `src/lib/auth/require-session.ts`: helper para proteger Route Handlers
+  (`requireSession()` devuelve la sesion o un `NextResponse` 401 listo).
+
+### Proteccion CSRF (double-submit cookie)
+
+- `src/lib/auth/csrf-constants.ts` — nombres de cookie/header, sin
+  dependencias (seguro para bundle de cliente).
+- `src/lib/auth/csrf.ts` — logica servidor (`node:crypto`): genera token,
+  compara en tiempo constante, detecta metodos "seguros".
+- `src/lib/auth/csrf-client.ts` — lee el token desde `document.cookie` en
+  cliente.
+- `src/lib/api/client-fetch.ts` — `apiFetch()` wrapper que anade el header
+  `x-csrf-token` automaticamente en POST/PUT/PATCH/DELETE.
+- `src/proxy.ts` — fija la cookie CSRF si no existe (en cualquier GET) y
+  **rechaza con 403** cualquier `/api/*` que mute estado sin
+  header==cookie. Limitacion conocida: un cliente debe hacer al menos un
+  GET antes de poder mutar (recibe la cookie); documentado aqui para no
+  sorprender en integraciones futuras (apps moviles nativas, etc. necesitaran
+  su propio manejo de cookies).
+
+### Recuperacion de cuenta sin datos sensibles (Fase 1, trade-offs)
+
+- Al registrarse, se genera un **codigo de recuperacion** legible
+  (`XXXX-XXXX-XXXX-XXXX-XXXX`, alfabeto sin caracteres ambiguos) mostrado
+  **una sola vez**; solo se guarda su hash Argon2id
+  (`users.recovery_code_hash`).
+- `POST /api/auth/recover` con `alias + recoveryCode + newPassword`:
+  valida, actualiza contrasena y **rota** el codigo de recuperacion
+  (se invalida el anterior, se entrega uno nuevo una sola vez).
+- **Trade-off deliberado**: si el usuario pierde el codigo Y olvida la
+  contrasena, la cuenta es irrecuperable — no se recolecta email/telefono
+  por el principio de minima informacion posible. Es una decision de
+  privacidad consciente, documentada tambien en la UI de `/recover`.
+
+### Verificacion de versiones reales de dependencias
+
+Todas las versiones en `package.json` fueron verificadas contra el registro
+de npm (no inventadas) en el momento de escribir este documento:
+`drizzle-orm@0.45.2`, `@neondatabase/serverless@1.1.0`, `zod@4.4.3`,
+`argon2@0.45.1`, `jose@6.2.4`, `nanoid@6.0.0`, `react@19.2.8`,
+`drizzle-kit@0.31.10`, `eslint@10.8.0`, `eslint-config-next@16.2.12` (debe
+igualar la version de `next`), `vitest@4.1.10`. Se anadio `eslint.config.mjs`
+con el patron oficial de Next.js 16 (flat config, `defineConfig` +
+`nextVitals` + `nextTs` + `globalIgnores`) ya que `next lint` fue eliminado
+en v16 a favor del CLI de ESLint directo (`pnpm lint` → `eslint .`).
+
+### Pendiente / bloqueos que persisten
+
+- Sigue bloqueado `pnpm install` en el entorno de desarrollo (ver Fase 0).
+  Por tanto: dependencias (`argon2`, `jose`, `nanoid`, `zod`) estan
+  declaradas en `package.json` pero **no instaladas**; nada de esto se ha
+  podido compilar, testear ni ejecutar en runtime real todavia.
+- `argon2` es un modulo nativo (native bindings) — al desplegar en Vercel
+  confirmar que el build target (Node.js runtime, no Edge) sea compatible;
+  las rutas de auth ya fijan `export const runtime = "nodejs"` explicitamente
+  por esta razon.
+- No se ha implementado rate limiting todavia (llega en Fase 3, incluye el
+  limite de creacion de gastos; podria reusarse la misma infraestructura
+  para throttling de login/registro si se decide en una fase posterior).
+- No hay verificacion de fuerza de contrasena mas alla de longitud minima
+  (10 caracteres); se considera suficiente para el alcance actual.
+
+## Proximos pasos (Fase 2 — Grupos y subgrupos)
+
+- CRUD de grupos con limite 64 miembros / 32 subgrupos (constraints ya
+  reflejadas en el esquema `groups.max_members` / `groups.max_subgroups`,
+  falta la logica de validacion en servicio).
+- Roles admin/miembro (enum `member_role` ya existe en `memberships`).
+- Invitacion por codigo/enlace (`groups.invite_code` ya existe en el
+  esquema) sin exponer datos personales de los miembros.
+- Proteger las nuevas rutas con `requireSession()` de Fase 1.
