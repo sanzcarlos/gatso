@@ -332,7 +332,41 @@ Next.js 15+/16) y devuelven errores via `errorResponse()` que traduce
   escritos de forma que sera facil anadir un `tx.insert(auditLogs)` dentro
   de las mismas transacciones existentes.
 
-## Proximos pasos (Fase 3 — Gastos y repartos)
+## Incidencias detectadas al ejecutar por primera vez (post Fase 2)
+
+Primera vez que se ejecuta `pnpm dev` en un entorno real (fuera del sandbox
+de desarrollo, donde pnpm estaba bloqueado). Encontrado y corregido:
+
+1. **`drizzle-kit` no carga `.env.local`** (esa es una convencion propia de
+   Next.js, no de drizzle-kit). Solucion: `drizzle.config.ts` ahora carga
+   `.env.local` y `.env` explicitamente via el paquete `dotenv` (anadido
+   como devDependency).
+2. **`next.config.ts` usaba `experimental.typedRoutes`**, que en Next.js 16
+   se movio a la raiz de la config (`typedRoutes`, ya no experimental).
+3. **TypeScript 7.0.2 no expone la Compiler API que Next.js usa por
+   defecto** (TS7 es el nuevo compilador nativo con una API distinta).
+   Next.js detecta esto y lanza `Unhandled Rejection` al arrancar. Solucion:
+   `experimental.useTypeScriptCli: true` en `next.config.ts`, que indica a
+   Next.js que invoque el CLI de `tsc` en lugar de la Compiler API interna.
+
+Estado tras estas correcciones: pendiente de confirmacion del usuario tras
+volver a ejecutar `pnpm dev`.
+
+## Como verificar que el proyecto funciona (sin usar el navegador)
+
+```bash
+pnpm dev
+# en otra terminal, con el servidor corriendo:
+curl -i http://localhost:3000/api/health   # debe devolver 200 + JSON {status:"ok",...}
+curl -i http://localhost:3000/             # debe devolver 200 + HTML
+```
+
+Si `curl` no esta disponible, usar `node -e "fetch('http://localhost:3000/api/health').then(r=>r.text()).then(console.log)"`.
+Si el arranque de `pnpm dev` no llega a imprimir `✓ Ready`, el error de
+arranque aparece completo en esa misma terminal (no hace falta el
+navegador para diagnosticarlo).
+
+
 
 - Modelo `expenses` / `expense_shares` ya definido en el esquema (Fase 0)
   con patron Strategy via enum `split_method` (`equal`/`percentage`/`fixed`).
