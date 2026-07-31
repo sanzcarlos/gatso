@@ -5,9 +5,11 @@ import { groups } from "./groups";
 export const auditActionEnum = pgEnum("audit_action", ["create", "update", "delete"]);
 
 /**
- * Log de auditoria inmutable (Fase 5). La inmutabilidad se refuerza en la
- * migracion SQL con una regla/trigger que impide UPDATE y DELETE sobre esta
- * tabla (ver drizzle/ tras `pnpm db:generate`, se anadira SQL manual).
+ * Log de auditoria inmutable (Fase 5). La inmutabilidad se refuerza con un
+ * trigger SQL (`prevent_audit_logs_mutation`, ver
+ * `drizzle/0003_audit_logs_immutable.sql`) que rechaza cualquier UPDATE o
+ * DELETE sobre esta tabla directamente en la base de datos, con
+ * independencia de la capa de aplicacion.
  */
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").primaryKey().defaultRandom(),

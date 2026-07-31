@@ -5,8 +5,8 @@
 
 ## Estado actual
 
-**Fase completada: Fase 4 — Seguridad y permisos.**
-Pendiente confirmacion del usuario para iniciar Fase 5 (Auditoria inmutable).
+**Fase completada: Fase 5 — Auditoria inmutable.**
+Pendiente confirmacion del usuario para iniciar Fase 6 (Gestion de monedas).
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -769,3 +769,81 @@ verificada a nivel de servicio (no solo frontend) en ambos casos.
   todavia no tiene la regla/trigger SQL que impida `UPDATE`/`DELETE` sobre
   la tabla (mencionado desde el diseno original en Fase 0, nunca
   implementado). Es el elemento pendiente mas directo de cara a Fase 5.
+
+## Fase 5 — Auditoria inmutable (completada)
+
+### Inmutabilidad real a nivel de base de datos (trigger SQL)
+
+`audit_logs` ya se usaba desde Fase 4 para el historial de gastos, pero
+nada impedia que una fila fuera modificada o borrada (ni por un bug futuro
+en la app, ni por acceso directo a la base de datos). Migracion custom
+`drizzle/0003_audit_logs_immutable.sql` (generada con
+`drizzle-kit generate --custom`, ya que un trigger no es representable en
+el esquema TypeScript de Drizzle):
+
+- Funcion `prevent_audit_logs_mutation()` que lanza `RAISE EXCEPTION`.
+- Trigger `audit_logs_prevent_update` (`BEFORE UPDATE`) y
+  `audit_logs_prevent_delete` (`BEFORE DELETE`), ambos `FOR EACH ROW`.
+- Verificado manualmente contra la base de datos real: tanto un `UPDATE`
+  como un `DELETE` directos sobre una fila existente de `audit_logs`
+  fallan con el mensaje del trigger, confirmando que la tabla es
+  realmente append-only a nivel de Postgres, no solo por convencion en el
+  codigo de la aplicacion.
+
+### Auditoria extendida a todo el ciclo de vida del grupo (antes: solo gastos)
+
+Hasta ahora `audit_logs` solo registraba create/update/delete de gastos.
+Nuevo servicio compartido `src/lib/audit/service.ts`
+(`recordAuditLog`/`getGroupAuditLog`), usado ahora tambien por:
+
+- `src/lib/groups/service.ts`: `createGroup` (alta de grupo + membresia
+  admin inicial), `updateGroupName` (con snapshot del nombre anterior),
+  `joinGroupByInviteCode` (alta de membresia), `removeMember` (baja de
+  membresia).
+- `src/lib/groups/subgroup-service.ts`: `createSubgroup`,
+  `addSubgroupMember`, `removeSubgroupMember`.
+- `src/lib/groups/invitation-service.ts`: `acceptGroupInvitation` (alta de
+  membresia al aceptar una invitacion personal).
+- `src/lib/expenses/service.ts`: refactorizado para usar el mismo
+  `recordAuditLog` compartido en vez de un helper local duplicado
+  (`logExpenseChange` eliminado), mismo comportamiento que antes.
+
+Todas las llamadas se hacen dentro de la misma transaccion que la
+operacion auditada (siguiendo el patron ya usado en gastos desde Fase 4),
+para que la accion y su registro de auditoria se confirmen o deshagan
+juntos. `entityType` sigue siendo un `varchar(32)` libre (no un enum de
+Postgres) para poder anadir nuevos tipos de entidad sin migrar el esquema;
+valores actuales: `expense`, `group`, `subgroup`, `membership`,
+`subgroup_membership`.
+
+### Visor de auditoria por grupo (solo administradores)
+
+- `GET /api/groups/[groupId]/audit-log` (`getGroupAuditLog`, restringido
+  con `requireGroupAdmin`): historial completo del grupo (todas las
+  entidades, no solo un gasto concreto como en
+  `getExpenseHistory`/`ExpenseHistoryDialog`, que sigue existiendo sin
+  cambios y disponible para cualquier miembro).
+- UI: `GroupAuditLogCard` (`src/app/(app)/groups/[groupId]/group-audit-log-card.tsx`),
+  nueva tarjeta "Auditoria" al final de la pagina de detalle de grupo,
+  visible solo si `isAdmin`; describe cada entrada en lenguaje natural
+  (quien, que accion, sobre que entidad, cuando).
+
+### Pendiente / fuera de alcance de esta fase
+
+- No se anadio auditoria de registro de usuario (`createUserWithAlias`)
+  ni de creacion/uso de invitaciones (`createGroupInvitation`) — se
+  considero que la creacion de membresia (ya auditada) es el evento
+  relevante para el grupo; la creacion de cuenta en si es un evento de
+  usuario sin `groupId` natural y se puede anadir despues si se pide.
+- El visor de auditoria no tiene filtro por tipo de entidad ni paginacion
+  (limite fijo de 100 filas mas recientes) — suficiente para el volumen
+  esperado de un grupo, se puede ampliar si hace falta.
+- Verificado con `tsc --noEmit`, `vitest run` (18/18) y `next build` tras
+  todos los cambios; trigger de inmutabilidad verificado con
+  UPDATE/DELETE de prueba directos contra la base de datos.
+
+## Proximos pasos (Fase 6 — Gestion de monedas)
+
+- Solo existe `GET /api/currencies` (listado de monedas activas). Falta
+  alta/baja de monedas y el limite de 16 monedas activas mencionado en el
+  diseno original (Fase 0) pero nunca implementado.

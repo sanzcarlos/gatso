@@ -1,11 +1,11 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, expenses, expenseShares, subgroupMemberships, users, auditLogs } from "@/db";
-import type { Tx } from "@/db";
 import { AppError } from "@/lib/errors";
 import { requireMembership } from "@/lib/groups/service";
 import { getSubgroupInGroup } from "@/lib/groups/subgroup-service";
 import { requireActiveCurrency } from "@/lib/currencies/service";
 import { createNotification, resolveExpenseNotifications } from "@/lib/notifications/service";
+import { recordAuditLog } from "@/lib/audit/service";
 import { computeShares } from "./split-strategies";
 import { parseAmountToCents, centsToAmount } from "@/lib/money";
 import { enforceExpenseCreationRateLimit } from "./rate-limit";
@@ -61,28 +61,6 @@ async function loadExpenseWithShares(groupId: string, expenseId: string) {
   return { expense, shares };
 }
 
-async function logExpenseChange(
-  tx: Tx,
-  params: {
-    actorUserId: string;
-    action: "create" | "update" | "delete";
-    groupId: string;
-    expenseId: string;
-    beforeData: unknown;
-    afterData: unknown;
-  },
-) {
-  await tx.insert(auditLogs).values({
-    actorUserId: params.actorUserId,
-    action: params.action,
-    entityType: "expense",
-    entityId: params.expenseId,
-    groupId: params.groupId,
-    beforeData: params.beforeData ?? null,
-    afterData: params.afterData ?? null,
-  });
-}
-
 export async function createExpense(groupId: string, actingUserId: string, input: CreateExpenseInput) {
   await requireMembership(groupId, actingUserId);
   await requireActiveCurrency(input.currencyCode);
@@ -135,11 +113,12 @@ export async function createExpense(groupId: string, actingUserId: string, input
       )
       .returning();
 
-    await logExpenseChange(tx, {
+    await recordAuditLog(tx, {
       actorUserId: actingUserId,
       action: "create",
+      entityType: "expense",
+      entityId: expense.id,
       groupId,
-      expenseId: expense.id,
       beforeData: null,
       afterData: { expense, shares: insertedShares },
     });
@@ -370,11 +349,12 @@ export async function updateExpense(
       )
       .returning();
 
-    await logExpenseChange(tx, {
+    await recordAuditLog(tx, {
       actorUserId: actingUserId,
       action: "update",
+      entityType: "expense",
+      entityId: expenseId,
       groupId,
-      expenseId,
       beforeData: { expense: currentExpense, shares: currentShares },
       afterData: { expense: updatedExpense, shares: insertedShares },
     });
@@ -417,11 +397,12 @@ export async function validateExpense(groupId: string, expenseId: string, acting
       .returning();
     if (!validated) throw new AppError(500, "No se pudo validar el gasto");
 
-    await logExpenseChange(tx, {
+    await recordAuditLog(tx, {
       actorUserId: actingUserId,
       action: "update",
+      entityType: "expense",
+      entityId: expenseId,
       groupId,
-      expenseId,
       beforeData: { expense: currentExpense },
       afterData: { expense: validated, validated: true },
     });
@@ -490,11 +471,12 @@ export async function deleteExpense(groupId: string, expenseId: string, actingUs
   }
 
   return db.transaction(async (tx) => {
-    await logExpenseChange(tx, {
+    await recordAuditLog(tx, {
       actorUserId: actingUserId,
       action: "delete",
+      entityType: "expense",
+      entityId: expenseId,
       groupId,
-      expenseId,
       beforeData: { expense, shares },
       afterData: null,
     });

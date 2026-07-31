@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, Wallet } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -30,7 +30,8 @@ export function SiteHeader({ session }: SiteHeaderProps) {
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-4 px-4">
         <Link href="/" className="flex items-center gap-2 font-semibold text-foreground">
-          <Wallet className="h-5 w-5 text-primary" aria-hidden="true" />
+          {/* eslint-disable-next-line @next/next/no-img-element -- SVG decorativo pequeno, no requiere next/image */}
+          <img src="/icons/icon.svg" alt="" width={22} height={22} className="rounded-md" aria-hidden="true" />
           Gatso
         </Link>
 

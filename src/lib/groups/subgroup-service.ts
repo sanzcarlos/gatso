@@ -4,6 +4,7 @@ import type { Tx } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { getMembership, requireMembership } from "./service";
+import { recordAuditLog } from "@/lib/audit/service";
 import { GROUP_MAX_SUBGROUPS } from "@/lib/validation/groups";
 
 /**
@@ -48,6 +49,14 @@ export async function createSubgroup(groupId: string, userId: string, name: stri
       const [subgroup] = await tx.insert(subgroups).values({ groupId, name, createdBy: userId }).returning();
       if (!subgroup) throw new AppError(500, "No se pudo crear el subgrupo");
       await tx.insert(subgroupMemberships).values({ subgroupId: subgroup.id, userId });
+      await recordAuditLog(tx, {
+        actorUserId: userId,
+        action: "create",
+        entityType: "subgroup",
+        entityId: subgroup.id,
+        groupId,
+        afterData: subgroup,
+      });
       return subgroup;
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -101,18 +110,30 @@ export async function addSubgroupMember(
     throw new AppError(400, "El usuario no pertenece al grupo", "target_not_group_member");
   }
 
-  try {
-    const [row] = await db
-      .insert(subgroupMemberships)
-      .values({ subgroupId, userId: targetUserId })
-      .returning();
-    return row;
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new AppError(409, "El usuario ya es miembro de este subgrupo", "already_subgroup_member");
+  return db.transaction(async (tx) => {
+    try {
+      const [row] = await tx
+        .insert(subgroupMemberships)
+        .values({ subgroupId, userId: targetUserId })
+        .returning();
+      if (row) {
+        await recordAuditLog(tx, {
+          actorUserId: actingUserId,
+          action: "create",
+          entityType: "subgroup_membership",
+          entityId: row.id,
+          groupId,
+          afterData: row,
+        });
+      }
+      return row;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new AppError(409, "El usuario ya es miembro de este subgrupo", "already_subgroup_member");
+      }
+      throw error;
     }
-    throw error;
-  }
+  });
 }
 
 export async function listSubgroupMembers(groupId: string, subgroupId: string, userId: string) {
@@ -141,12 +162,25 @@ export async function removeSubgroupMember(
     );
   }
 
-  const deleted = await db
-    .delete(subgroupMemberships)
-    .where(and(eq(subgroupMemberships.subgroupId, subgroupId), eq(subgroupMemberships.userId, targetUserId)))
-    .returning();
-  if (deleted.length === 0) {
-    throw new AppError(404, "El usuario no es miembro de este subgrupo", "subgroup_member_not_found");
-  }
-  return deleted[0];
+  return db.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(subgroupMemberships)
+      .where(and(eq(subgroupMemberships.subgroupId, subgroupId), eq(subgroupMemberships.userId, targetUserId)))
+      .returning();
+    if (deleted.length === 0) {
+      throw new AppError(404, "El usuario no es miembro de este subgrupo", "subgroup_member_not_found");
+    }
+    const removed = deleted[0];
+    if (removed) {
+      await recordAuditLog(tx, {
+        actorUserId: actingUserId,
+        action: "delete",
+        entityType: "subgroup_membership",
+        entityId: removed.id,
+        groupId,
+        beforeData: removed,
+      });
+    }
+    return removed;
+  });
 }

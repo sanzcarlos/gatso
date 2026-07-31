@@ -22,6 +22,7 @@ import {
 import { ExpenseFormDialog } from "./expense-form-dialog";
 import { ExpenseHistoryDialog } from "./expense-history-dialog";
 import { InviteMemberDialog } from "./invite-member-dialog";
+import { GroupAuditLogCard } from "./group-audit-log-card";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
 
 interface GroupDetail {
@@ -380,6 +381,8 @@ export default function GroupDetailClient({
           </CardContent>
         </form>
       </Card>
+
+      {isAdmin ? <GroupAuditLogCard groupId={groupId} /> : null}
     </div>
   );
 }

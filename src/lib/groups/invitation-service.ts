@@ -6,6 +6,7 @@ import { isUniqueViolation } from "@/lib/db/errors";
 import { createUserWithAlias } from "@/lib/users/service";
 import { requireMembership } from "./service";
 import { addUserToAllGroupSubgroups } from "./subgroup-service";
+import { recordAuditLog } from "@/lib/audit/service";
 import { createSessionToken, setSessionCookie } from "@/lib/auth/session";
 
 export const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -106,8 +107,13 @@ export async function acceptGroupInvitation(token: string, alias: string, passwo
 
     const { user } = await createUserWithAlias(alias, password, tx);
 
+    let membershipId: string | undefined;
     try {
-      await tx.insert(memberships).values({ groupId: group.id, userId: user.id, role: "member" });
+      const [membership] = await tx
+        .insert(memberships)
+        .values({ groupId: group.id, userId: user.id, role: "member" })
+        .returning();
+      membershipId = membership?.id;
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new AppError(409, "Ya eres miembro de este grupo", "already_member");
@@ -116,6 +122,17 @@ export async function acceptGroupInvitation(token: string, alias: string, passwo
     }
 
     await addUserToAllGroupSubgroups(tx, group.id, user.id);
+
+    if (membershipId) {
+      await recordAuditLog(tx, {
+        actorUserId: user.id,
+        action: "create",
+        entityType: "membership",
+        entityId: membershipId,
+        groupId: group.id,
+        afterData: { groupId: group.id, userId: user.id, role: "member", viaInvitation: true },
+      });
+    }
 
     await tx
       .update(groupInvitations)

@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { generateInviteCode } from "./invite-code";
 import { addUserToAllGroupSubgroups } from "./subgroup-service";
+import { recordAuditLog } from "@/lib/audit/service";
 import { GROUP_MAX_MEMBERS } from "@/lib/validation/groups";
 
 const INVITE_CODE_MAX_ATTEMPTS = 5;
@@ -18,7 +19,28 @@ export async function createGroup(userId: string, name: string) {
           .values({ name, inviteCode, createdBy: userId, maxMembers: GROUP_MAX_MEMBERS })
           .returning();
         if (!group) throw new AppError(500, "No se pudo crear el grupo");
-        await tx.insert(memberships).values({ groupId: group.id, userId, role: "admin" });
+        const [membership] = await tx
+          .insert(memberships)
+          .values({ groupId: group.id, userId, role: "admin" })
+          .returning();
+        await recordAuditLog(tx, {
+          actorUserId: userId,
+          action: "create",
+          entityType: "group",
+          entityId: group.id,
+          groupId: group.id,
+          afterData: group,
+        });
+        if (membership) {
+          await recordAuditLog(tx, {
+            actorUserId: userId,
+            action: "create",
+            entityType: "membership",
+            entityId: membership.id,
+            groupId: group.id,
+            afterData: membership,
+          });
+        }
         return group;
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -86,9 +108,25 @@ export async function getGroupDetail(groupId: string, userId: string) {
 
 export async function updateGroupName(groupId: string, userId: string, name: string) {
   await requireGroupAdmin(groupId, userId);
-  const [group] = await db.update(groups).set({ name }).where(eq(groups.id, groupId)).returning();
-  if (!group) throw new AppError(404, "Grupo no encontrado", "group_not_found");
-  return group;
+  return db.transaction(async (tx) => {
+    const [previousGroup] = await tx.select().from(groups).where(eq(groups.id, groupId)).limit(1);
+    if (!previousGroup) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+
+    const [group] = await tx.update(groups).set({ name }).where(eq(groups.id, groupId)).returning();
+    if (!group) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+
+    await recordAuditLog(tx, {
+      actorUserId: userId,
+      action: "update",
+      entityType: "group",
+      entityId: group.id,
+      groupId: group.id,
+      beforeData: previousGroup,
+      afterData: group,
+    });
+
+    return group;
+  });
 }
 
 export async function joinGroupByInviteCode(userId: string, inviteCode: string) {
@@ -130,6 +168,17 @@ export async function joinGroupByInviteCode(userId: string, inviteCode: string) 
 
     await addUserToAllGroupSubgroups(tx, group.id, userId);
 
+    if (membership) {
+      await recordAuditLog(tx, {
+        actorUserId: userId,
+        action: "create",
+        entityType: "membership",
+        entityId: membership.id,
+        groupId: group.id,
+        afterData: membership,
+      });
+    }
+
     return { group, membership };
   });
 }
@@ -157,12 +206,25 @@ export async function removeMember(groupId: string, actingUserId: string, target
       "cannot_remove_self",
     );
   }
-  const deleted = await db
-    .delete(memberships)
-    .where(and(eq(memberships.groupId, groupId), eq(memberships.userId, targetUserId)))
-    .returning();
-  if (deleted.length === 0) {
-    throw new AppError(404, "El usuario no es miembro de este grupo", "member_not_found");
-  }
-  return deleted[0];
+  return db.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(memberships)
+      .where(and(eq(memberships.groupId, groupId), eq(memberships.userId, targetUserId)))
+      .returning();
+    if (deleted.length === 0) {
+      throw new AppError(404, "El usuario no es miembro de este grupo", "member_not_found");
+    }
+    const removed = deleted[0];
+    if (removed) {
+      await recordAuditLog(tx, {
+        actorUserId: actingUserId,
+        action: "delete",
+        entityType: "membership",
+        entityId: removed.id,
+        groupId,
+        beforeData: removed,
+      });
+    }
+    return removed;
+  });
 }
