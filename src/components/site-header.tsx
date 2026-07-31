@@ -6,6 +6,7 @@ import { LogOut, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationsBell } from "@/components/notifications-bell";
 import { apiFetch } from "@/lib/api/client-fetch";
 
 interface SiteHeaderProps {
@@ -45,7 +46,12 @@ export function SiteHeader({ session }: SiteHeaderProps) {
           <ThemeToggle />
           {session ? (
             <>
-              <span className="hidden text-sm text-muted-foreground sm:inline">{session.alias}</span>
+              <NotificationsBell />
+              <span className="hidden text-sm text-muted-foreground sm:inline">
+                <Link href={`/users/${session.userId}`} className="hover:text-foreground hover:underline">
+                  {session.alias}
+                </Link>
+              </span>
               <Button variant="ghost" size="icon" aria-label="Cerrar sesion" onClick={handleLogout}>
                 <LogOut />
               </Button>

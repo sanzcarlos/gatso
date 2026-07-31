@@ -23,7 +23,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 
 interface Member {
   userId: string;
@@ -52,15 +52,20 @@ export function ExpenseFormDialog({
   groupId,
   members,
   subgroups,
-  onCreated,
+  onSaved,
+  editExpenseId,
 }: {
   groupId: string;
   members: Member[];
   subgroups: Subgroup[];
-  onCreated: () => void | Promise<void>;
+  onSaved: () => void | Promise<void>;
+  /** Si se indica, el dialogo edita ese gasto en vez de crear uno nuevo. */
+  editExpenseId?: string;
 }) {
+  const isEditMode = Boolean(editExpenseId);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [amount, setAmount] = useState("");
@@ -80,6 +85,53 @@ export function ExpenseFormDialog({
   }, [open]);
 
   useEffect(() => {
+    if (!open || !isEditMode || !editExpenseId) return;
+    setLoadingDetail(true);
+    apiFetch(`/api/groups/${groupId}/expenses/${editExpenseId}`)
+      .then(async (response) => {
+        if (!response.ok) {
+          toast.error("No se pudo cargar el gasto");
+          setOpen(false);
+          return;
+        }
+        const data = await response.json();
+        const expense = data.expense as {
+          amount: string;
+          currencyCode: string;
+          description: string;
+          expenseDate: string;
+          payerId: string;
+          subgroupId: string | null;
+          splitMethod: SplitMethod;
+        };
+        const shares = data.shares as { userId: string; shareAmount: string; sharePercentage: string | null }[];
+
+        setAmount(expense.amount);
+        setCurrencyCode(expense.currencyCode);
+        setDescription(expense.description);
+        setExpenseDate(expense.expenseDate);
+        setPayerId(expense.payerId);
+        setSubgroupId(expense.subgroupId ?? "none");
+        setMethod(expense.splitMethod);
+
+        const nextRows: Record<string, ParticipantRow> = {};
+        for (const member of members) {
+          const share = shares.find((s) => s.userId === member.userId);
+          nextRows[member.userId] = share
+            ? {
+                included: true,
+                value: expense.splitMethod === "percentage" ? (share.sharePercentage ?? "") : share.shareAmount,
+              }
+            : { included: false, value: "" };
+        }
+        setRows(nextRows);
+      })
+      .finally(() => setLoadingDetail(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEditMode, editExpenseId, groupId]);
+
+  useEffect(() => {
+    if (isEditMode) return;
     setRows((prev) => {
       const next: Record<string, ParticipantRow> = {};
       for (const member of members) {
@@ -87,7 +139,7 @@ export function ExpenseFormDialog({
       }
       return next;
     });
-  }, [members]);
+  }, [members, isEditMode]);
 
   const totalIncluded = useMemo(
     () => Object.values(rows).filter((r) => r.included).length,
@@ -139,29 +191,34 @@ export function ExpenseFormDialog({
       };
     }
 
+    const payload = {
+      amount,
+      currencyCode,
+      description,
+      expenseDate,
+      payerId,
+      subgroupId: subgroupId === "none" ? undefined : subgroupId,
+      split,
+    };
+
     setSubmitting(true);
     try {
-      const response = await apiFetch(`/api/groups/${groupId}/expenses`, {
-        method: "POST",
-        body: JSON.stringify({
-          amount,
-          currencyCode,
-          description,
-          expenseDate,
-          payerId,
-          subgroupId: subgroupId === "none" ? undefined : subgroupId,
-          split,
-        }),
+      const url = isEditMode
+        ? `/api/groups/${groupId}/expenses/${editExpenseId}`
+        : `/api/groups/${groupId}/expenses`;
+      const response = await apiFetch(url, {
+        method: isEditMode ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        toast.error(data.error ?? "No se pudo crear el gasto");
+        toast.error(data.error ?? (isEditMode ? "No se pudo editar el gasto" : "No se pudo crear el gasto"));
         return;
       }
-      toast.success("Gasto creado");
-      resetForm();
+      toast.success(isEditMode ? "Gasto actualizado" : "Gasto creado");
+      if (!isEditMode) resetForm();
       setOpen(false);
-      await onCreated();
+      await onSaved();
     } finally {
       setSubmitting(false);
     }
@@ -170,154 +227,169 @@ export function ExpenseFormDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus />
-          Nuevo gasto
-        </Button>
+        {isEditMode ? (
+          <Button variant="ghost" size="sm" aria-label="Editar gasto">
+            <Pencil />
+            Editar
+          </Button>
+        ) : (
+          <Button>
+            <Plus />
+            Nuevo gasto
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nuevo gasto</DialogTitle>
-          <DialogDescription>Registra quien pago y como se reparte entre el grupo.</DialogDescription>
+          <DialogTitle>{isEditMode ? "Editar gasto" : "Nuevo gasto"}</DialogTitle>
+          <DialogDescription>
+            {isEditMode
+              ? "Si editas un gasto de otro usuario (como administrador), quedara pendiente de validacion por quien lo creo."
+              : "Registra quien pago y como se reparte entre el grupo."}
+          </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
+        {loadingDetail ? (
+          <p className="text-sm text-muted-foreground">Cargando...</p>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="expense-amount">Importe</Label>
+                <Input
+                  id="expense-amount"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="42.50"
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="expense-currency">Moneda</Label>
+                <Select value={currencyCode} onValueChange={setCurrencyCode}>
+                  <SelectTrigger id="expense-currency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(currencies.length > 0 ? currencies : [{ code: "EUR", name: "Euro", symbol: "€" }]).map(
+                      (currency) => (
+                        <SelectItem key={currency.code} value={currency.code}>
+                          {currency.code} ({currency.symbol})
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="flex flex-col gap-2">
-              <Label htmlFor="expense-amount">Importe</Label>
+              <Label htmlFor="expense-description">Descripcion</Label>
               <Input
-                id="expense-amount"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="42.50"
+                id="expense-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Cena del sabado"
+                maxLength={280}
                 required
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="expense-currency">Moneda</Label>
-              <Select value={currencyCode} onValueChange={setCurrencyCode}>
-                <SelectTrigger id="expense-currency">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(currencies.length > 0 ? currencies : [{ code: "EUR", name: "Euro", symbol: "€" }]).map(
-                    (currency) => (
-                      <SelectItem key={currency.code} value={currency.code}>
-                        {currency.code} ({currency.symbol})
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="expense-date">Fecha</Label>
+                <Input
+                  id="expense-date"
+                  type="date"
+                  value={expenseDate}
+                  onChange={(e) => setExpenseDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="expense-payer">Pagador</Label>
+                <Select value={payerId} onValueChange={setPayerId}>
+                  <SelectTrigger id="expense-payer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.map((member) => (
+                      <SelectItem key={member.userId} value={member.userId}>
+                        {member.alias}
                       </SelectItem>
-                    ),
-                  )}
-                </SelectContent>
-              </Select>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="expense-description">Descripcion</Label>
-            <Input
-              id="expense-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Cena del sabado"
-              maxLength={280}
-              required
-            />
-          </div>
+            {subgroups.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="expense-subgroup">Subgrupo (opcional)</Label>
+                <Select value={subgroupId} onValueChange={setSubgroupId}>
+                  <SelectTrigger id="expense-subgroup">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Todo el grupo</SelectItem>
+                    {subgroups.map((subgroup) => (
+                      <SelectItem key={subgroup.id} value={subgroup.id}>
+                        {subgroup.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
-          <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="expense-date">Fecha</Label>
-              <Input
-                id="expense-date"
-                type="date"
-                value={expenseDate}
-                onChange={(e) => setExpenseDate(e.target.value)}
-                required
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="expense-payer">Pagador</Label>
-              <Select value={payerId} onValueChange={setPayerId}>
-                <SelectTrigger id="expense-payer">
+              <Label htmlFor="expense-method">Metodo de reparto</Label>
+              <Select value={method} onValueChange={(value) => setMethod(value as SplitMethod)}>
+                <SelectTrigger id="expense-method">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {members.map((member) => (
-                    <SelectItem key={member.userId} value={member.userId}>
-                      {member.alias}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="equal">Partes iguales</SelectItem>
+                  <SelectItem value="percentage">Por porcentajes</SelectItem>
+                  <SelectItem value="fixed">Por importes fijos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          {subgroups.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="expense-subgroup">Subgrupo (opcional)</Label>
-              <Select value={subgroupId} onValueChange={setSubgroupId}>
-                <SelectTrigger id="expense-subgroup">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Todo el grupo</SelectItem>
-                  {subgroups.map((subgroup) => (
-                    <SelectItem key={subgroup.id} value={subgroup.id}>
-                      {subgroup.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="expense-method">Metodo de reparto</Label>
-            <Select value={method} onValueChange={(value) => setMethod(value as SplitMethod)}>
-              <SelectTrigger id="expense-method">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="equal">Partes iguales</SelectItem>
-                <SelectItem value="percentage">Por porcentajes</SelectItem>
-                <SelectItem value="fixed">Por importes fijos</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-            <p className="text-xs font-medium text-muted-foreground">
-              Participantes {method !== "equal" ? `(deben sumar ${method === "percentage" ? "100%" : "el importe total"})` : `(${totalIncluded} seleccionados)`}
-            </p>
-            {members.map((member) => {
-              const row = rows[member.userId] ?? { included: true, value: "" };
-              return (
-                <div key={member.userId} className="flex items-center gap-3">
-                  <Switch
-                    checked={row.included}
-                    onCheckedChange={() => toggleIncluded(member.userId)}
-                    aria-label={`Incluir a ${member.alias}`}
-                  />
-                  <span className="flex-1 text-sm text-foreground">{member.alias}</span>
-                  {method !== "equal" && row.included ? (
-                    <Input
-                      className="w-24"
-                      value={row.value}
-                      onChange={(e) => setValue(member.userId, e.target.value)}
-                      placeholder={method === "percentage" ? "33.33" : "10.00"}
-                      required
+            <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Participantes {method !== "equal" ? `(deben sumar ${method === "percentage" ? "100%" : "el importe total"})` : `(${totalIncluded} seleccionados)`}
+              </p>
+              {members.map((member) => {
+                const row = rows[member.userId] ?? { included: true, value: "" };
+                return (
+                  <div key={member.userId} className="flex items-center gap-3">
+                    <Switch
+                      checked={row.included}
+                      onCheckedChange={() => toggleIncluded(member.userId)}
+                      aria-label={`Incluir a ${member.alias}`}
                     />
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
+                    <span className="flex-1 text-sm text-foreground">{member.alias}</span>
+                    {method !== "equal" && row.included ? (
+                      <Input
+                        className="w-24"
+                        value={row.value}
+                        onChange={(e) => setValue(member.userId, e.target.value)}
+                        placeholder={method === "percentage" ? "33.33" : "10.00"}
+                        required
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
 
-          <DialogFooter>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creando..." : "Crear gasto"}
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? "Guardando..." : isEditMode ? "Guardar cambios" : "Crear gasto"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

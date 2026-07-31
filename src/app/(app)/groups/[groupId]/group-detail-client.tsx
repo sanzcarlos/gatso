@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ExpenseFormDialog } from "./expense-form-dialog";
+import { ExpenseHistoryDialog } from "./expense-history-dialog";
 
 interface GroupDetail {
   group: { id: string; name: string; inviteCode: string; maxMembers: number; maxSubgroups: number };
@@ -46,6 +48,8 @@ interface ExpenseRow {
     expenseDate: string;
     splitMethod: "equal" | "percentage" | "fixed";
     createdBy: string;
+    payerId: string;
+    status: "confirmed" | "modified" | "pending_validation";
   };
   payerAlias: string;
 }
@@ -54,6 +58,18 @@ const SPLIT_METHOD_LABEL: Record<ExpenseRow["expense"]["splitMethod"], string> =
   equal: "Partes iguales",
   percentage: "Porcentajes",
   fixed: "Importes fijos",
+};
+
+const STATUS_LABEL: Record<ExpenseRow["expense"]["status"], string> = {
+  confirmed: "Confirmado",
+  modified: "Modificado",
+  pending_validation: "Pendiente de validar",
+};
+
+const STATUS_VARIANT: Record<ExpenseRow["expense"]["status"], "outline" | "secondary" | "warning"> = {
+  confirmed: "outline",
+  modified: "secondary",
+  pending_validation: "warning",
 };
 
 export default function GroupDetailClient({
@@ -132,6 +148,17 @@ export default function GroupDetailClient({
     await load();
   }
 
+  async function handleValidateExpense(expenseId: string) {
+    const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}/validate`, { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      toast.error(data.error ?? "No se pudo validar el gasto");
+      return;
+    }
+    toast.success("Cambios validados");
+    await load();
+  }
+
   if (!detail) {
     return (
       <div className="flex flex-col gap-4">
@@ -167,7 +194,7 @@ export default function GroupDetailClient({
               groupId={groupId}
               members={members.map((m) => ({ userId: m.userId, alias: m.alias }))}
               subgroups={subgroups ?? []}
-              onCreated={load}
+              onSaved={load}
             />
           ) : null}
         </CardHeader>
@@ -184,30 +211,60 @@ export default function GroupDetailClient({
                   <TableHead>Descripcion</TableHead>
                   <TableHead>Pagador</TableHead>
                   <TableHead>Reparto</TableHead>
+                  <TableHead>Estado</TableHead>
                   <TableHead className="text-right">Importe</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {expenses.map(({ expense, payerAlias }) => {
+                  const canEdit = isAdmin || expense.createdBy === currentUserId;
                   const canDelete = isAdmin || expense.createdBy === currentUserId;
+                  const canValidate = expense.status === "pending_validation" && expense.createdBy === currentUserId;
                   return (
                     <TableRow key={expense.id}>
                       <TableCell className="whitespace-nowrap">{expense.expenseDate}</TableCell>
                       <TableCell>{expense.description}</TableCell>
-                      <TableCell>{payerAlias}</TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/users/${expense.payerId}`}
+                          className="text-foreground underline-offset-4 hover:underline"
+                        >
+                          {payerAlias}
+                        </Link>
+                      </TableCell>
                       <TableCell>
                         <Badge variant="secondary">{SPLIT_METHOD_LABEL[expense.splitMethod]}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={STATUS_VARIANT[expense.status]}>{STATUS_LABEL[expense.status]}</Badge>
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {expense.amount} {expense.currencyCode}
                       </TableCell>
                       <TableCell className="text-right">
-                        {canDelete ? (
-                          <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>
-                            Borrar
-                          </Button>
-                        ) : null}
+                        <div className="flex justify-end gap-1">
+                          {canValidate ? (
+                            <Button variant="ghost" size="sm" onClick={() => handleValidateExpense(expense.id)}>
+                              Validar
+                            </Button>
+                          ) : null}
+                          {canEdit && members ? (
+                            <ExpenseFormDialog
+                              groupId={groupId}
+                              members={members.map((m) => ({ userId: m.userId, alias: m.alias }))}
+                              subgroups={subgroups ?? []}
+                              onSaved={load}
+                              editExpenseId={expense.id}
+                            />
+                          ) : null}
+                          <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} />
+                          {canDelete ? (
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>
+                              Borrar
+                            </Button>
+                          ) : null}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -235,12 +292,15 @@ export default function GroupDetailClient({
               {members?.map((member) => (
                 <TableRow key={member.userId}>
                   <TableCell>
-                    <div className="flex items-center gap-2">
+                    <Link
+                      href={`/users/${member.userId}`}
+                      className="flex items-center gap-2 text-foreground underline-offset-4 hover:underline"
+                    >
                       <Avatar className="h-7 w-7">
                         <AvatarFallback>{member.alias.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       {member.alias}
-                    </div>
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <Badge variant={member.role === "admin" ? "default" : "secondary"}>

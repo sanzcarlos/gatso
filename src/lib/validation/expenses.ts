@@ -51,3 +51,7 @@ export const createExpenseSchema = z.object({
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 export type SplitInput = z.infer<typeof splitSchema>;
+
+/** La edicion reemplaza el gasto completo, misma forma que la creacion. */
+export const updateExpenseSchema = createExpenseSchema;
+export type UpdateExpenseInput = CreateExpenseInput;

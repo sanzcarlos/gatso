@@ -11,6 +11,21 @@ import { currencies } from "./currencies";
  */
 export const splitMethodEnum = pgEnum("split_method", ["equal", "percentage", "fixed"]);
 
+/**
+ * Estado de validacion de un gasto (Fase 4):
+ * - "confirmed": estado normal, sin cambios pendientes.
+ * - "modified": el propio creador lo ha editado; solo informativo, no
+ *   requiere validacion de nadie.
+ * - "pending_validation": lo ha editado otro usuario (admin del grupo) y
+ *   el creador original debe revisar/validar el cambio antes de que vuelva
+ *   a "confirmed".
+ */
+export const expenseStatusEnum = pgEnum("expense_status", [
+  "confirmed",
+  "modified",
+  "pending_validation",
+]);
+
 export const expenses = pgTable("expenses", {
   id: uuid("id").primaryKey().defaultRandom(),
   groupId: uuid("group_id")
@@ -30,6 +45,8 @@ export const expenses = pgTable("expenses", {
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),
+  status: expenseStatusEnum("status").notNull().default("confirmed"),
+  lastEditedBy: uuid("last_edited_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

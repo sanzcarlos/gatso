@@ -549,6 +549,54 @@ datos), por lo que corren sin `DATABASE_URL` configurado.
   no un calculo de liquidacion; se puede abordar en una fase posterior si
   se solicita explicitamente.
 
+## Fase 4 (adelanto) — Edicion de gastos, validacion, historial y perfiles
+
+Funcionalidad pedida explicitamente por el usuario fuera de orden de fase,
+implementada completa (esquema + servicio + rutas + UI):
+
+- **Edicion de gastos** (`updateExpense` en `src/lib/expenses/service.ts`,
+  `PATCH /api/groups/[groupId]/expenses/[expenseId]`): permitido para quien
+  creo el gasto o el administrador del grupo (misma regla que borrar).
+  - Si edita el propio creador: `expenses.status` pasa a `"modified"`
+    (puramente informativo).
+  - Si edita otro usuario (admin del grupo editando un gasto ajeno):
+    `expenses.status` pasa a `"pending_validation"` y se crea una
+    `notification` para el creador original.
+- **Validacion** (`validateExpense`,
+  `POST /api/groups/[groupId]/expenses/[expenseId]/validate`): solo el
+  creador original puede validar un gasto en `pending_validation`; al
+  validar vuelve a `"confirmed"` y se resuelven (marcan leidas) las
+  notificaciones asociadas a ese gasto.
+- **Nuevo enum `expense_status`** (`confirmed | modified | pending_validation`)
+  y columna `expenses.last_edited_by` (migracion `drizzle/0000_swift_redwing.sql`,
+  generada y aplicada contra la Neon DB de `.env.local`).
+- **Historial de cambios**: se reutiliza la tabla `audit_logs` (ya existente
+  desde Fase 0, pensada para Fase 5) en vez de crear una tabla nueva:
+  `createExpense`/`updateExpense`/`validateExpense`/`deleteExpense` insertan
+  una fila (`action` create/update/delete, `beforeData`/`afterData` jsonb)
+  dentro de la misma transaccion. Expuesto via
+  `GET /api/groups/[groupId]/expenses/[expenseId]/history` y visible en la
+  UI con `ExpenseHistoryDialog` (boton "Historial" en cada fila de gasto).
+- **Notificaciones**: tabla nueva `notifications` (`src/db/schema/notifications.ts`)
+  + `src/lib/notifications/service.ts` (crear, listar, marcar
+  leida/leidas). Rutas `GET/PATCH /api/notifications` y
+  `PATCH /api/notifications/[notificationId]`. UI: `NotificationsBell` en
+  `SiteHeader`, con contador de no leidas y enlace al grupo del gasto.
+- **Perfil de usuario (solo lectura)**: `src/lib/users/service.ts`
+  (`getPublicProfile`, expone solo `alias`+`createdAt`, nunca hashes ni
+  datos sensibles), ruta `GET /api/users/[userId]`, pagina
+  `/users/[userId]` (`(app)/users/[userId]/`). Todos los alias clicables
+  (miembros del grupo, pagador de un gasto, alias propio en el header)
+  enlazan a este perfil.
+- **UI de edicion**: `ExpenseFormDialog` ahora sirve para crear y editar
+  (prop `editExpenseId`); en modo edicion carga el detalle (incluye
+  repartos) al abrir el dialogo y hace `PATCH` en vez de `POST`. Tabla de
+  gastos ampliada con columna "Estado" (badge `confirmed`/`modified`/
+  `pending_validation`) y botones "Editar"/"Validar" (segun permisos)/
+  "Historial".
+- Build (`next build`) y tests (`vitest run`, 18/18) verificados en este
+  entorno tras los cambios; typecheck (`tsc --noEmit`) limpio.
+
 ## Proximos pasos (Fase 4 — Seguridad y permisos)
 
 - La regla de borrado (creador o admin) ya esta implementada en

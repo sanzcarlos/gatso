@@ -1,46 +1,58 @@
 "use client";
 
 import * as React from "react";
+import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 /**
- * Selector de tema claro/oscuro/sistema. Usa next-themes: la preferencia
- * explicita se persiste en localStorage; sin eleccion, se respeta
- * `prefers-color-scheme` del sistema (opcion "Sistema").
+ * Selector de tema claro/oscuro como switch con iconos de sol/luna.
+ * Usa next-themes: sin eleccion explicita se respeta siempre el tema del
+ * sistema (`defaultTheme="system"` en ThemeProvider); al interactuar con el
+ * switch se fija explicitamente "light" u "dark" (se persiste en
+ * localStorage por next-themes).
  */
 export function ThemeToggle() {
-  const { setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => setMounted(true), []);
 
+  const isDark = mounted && resolvedTheme === "dark";
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Cambiar tema" className="relative">
-          {mounted ? (
-            <>
-              <Sun className="scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-              <Moon className="absolute scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-            </>
-          ) : (
-            <Sun className="opacity-0" />
+    <SwitchPrimitive.Root
+      checked={isDark}
+      onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+      aria-label="Cambiar tema claro/oscuro"
+      className={cn(
+        "peer relative inline-flex h-7 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        "data-[state=checked]:bg-primary data-[state=unchecked]:bg-input",
+      )}
+    >
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-between px-1.5">
+        <Sun
+          className={cn(
+            "h-3.5 w-3.5 transition-opacity",
+            isDark ? "opacity-40 text-primary-foreground" : "opacity-100 text-foreground",
           )}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme("light")}>Claro</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("dark")}>Oscuro</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("system")}>Sistema</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        />
+        <Moon
+          className={cn(
+            "h-3.5 w-3.5 transition-opacity",
+            isDark ? "opacity-100 text-primary-foreground" : "opacity-40 text-muted-foreground",
+          )}
+        />
+      </span>
+      <SwitchPrimitive.Thumb
+        className={cn(
+          "pointer-events-none relative z-10 block h-6 w-6 rounded-full bg-background shadow-md transition-transform",
+          "data-[state=checked]:translate-x-7 data-[state=unchecked]:translate-x-0.5",
+        )}
+      />
+    </SwitchPrimitive.Root>
   );
 }
