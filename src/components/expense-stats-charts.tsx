@@ -112,18 +112,18 @@ export function ExpenseStatsCharts({
               <CardDescription>Cuanto le corresponde pagar a cada persona en total.</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart margin={{ top: 20, right: 40, bottom: 20, left: 40 }}>
                   <Pie
                     data={currencyStats.shareByMember.map((m) => ({ ...m, amount: Number(toAmount(m.totalCents)) }))}
                     dataKey="amount"
                     nameKey="alias"
                     cx="50%"
                     cy="50%"
-                    outerRadius={80}
+                    outerRadius={70}
                     label={(props: unknown) => {
-                      const { alias, percent } = props as { alias: string; percent: number };
-                      return `${alias} (${(percent * 100).toFixed(0)}%)`;
+                      const { percent } = props as { percent: number };
+                      return `${(percent * 100).toFixed(0)}%`;
                     }}
                   >
                     {currencyStats.shareByMember.map((m, index) => (
@@ -139,7 +139,9 @@ export function ExpenseStatsCharts({
                       color: "var(--color-popover-foreground)",
                     }}
                   />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Legend
+                    wrapperStyle={{ fontSize: 12, overflowWrap: "anywhere", wordBreak: "break-word" }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
