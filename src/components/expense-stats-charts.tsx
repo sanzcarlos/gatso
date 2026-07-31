@@ -38,6 +38,15 @@ const CHART_COLORS = [
   "var(--color-destructive)",
 ];
 
+const TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: "var(--color-popover)",
+  border: "1px solid var(--color-border)",
+  borderRadius: 8,
+  color: "var(--color-popover-foreground)",
+};
+const TOOLTIP_LABEL_STYLE = { color: "var(--color-popover-foreground)" };
+const TOOLTIP_ITEM_STYLE = { color: "var(--color-popover-foreground)" };
+
 function colorFor(index: number): string {
   return CHART_COLORS[index % CHART_COLORS.length] ?? "var(--color-primary)";
 }
@@ -89,12 +98,9 @@ export function ExpenseStatsCharts({
                   <YAxis stroke="var(--color-muted-foreground)" fontSize={12} />
                   <Tooltip
                     formatter={(value) => [`${Number(value).toFixed(2)} ${currencyStats.currencyCode}`, "Pagado"]}
-                    contentStyle={{
-                      backgroundColor: "var(--color-popover)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: 8,
-                      color: "var(--color-popover-foreground)",
-                    }}
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                    labelStyle={TOOLTIP_LABEL_STYLE}
+                    itemStyle={TOOLTIP_ITEM_STYLE}
                   />
                   <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
                     {currencyStats.paidByMember.map((m, index) => (
@@ -132,12 +138,9 @@ export function ExpenseStatsCharts({
                   </Pie>
                   <Tooltip
                     formatter={(value) => [`${Number(value).toFixed(2)} ${currencyStats.currencyCode}`, "Reparto"]}
-                    contentStyle={{
-                      backgroundColor: "var(--color-popover)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: 8,
-                      color: "var(--color-popover-foreground)",
-                    }}
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                    labelStyle={TOOLTIP_LABEL_STYLE}
+                    itemStyle={TOOLTIP_ITEM_STYLE}
                   />
                   <Legend
                     wrapperStyle={{ fontSize: 12, overflowWrap: "anywhere", wordBreak: "break-word" }}
