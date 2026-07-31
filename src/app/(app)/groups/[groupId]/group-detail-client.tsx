@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/table";
 import { ExpenseFormDialog } from "./expense-form-dialog";
 import { ExpenseHistoryDialog } from "./expense-history-dialog";
+import { InviteMemberDialog } from "./invite-member-dialog";
+import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
 
 interface GroupDetail {
   group: { id: string; name: string; inviteCode: string; maxMembers: number; maxSubgroups: number };
@@ -83,22 +85,25 @@ export default function GroupDetailClient({
   const [members, setMembers] = useState<Member[] | null>(null);
   const [subgroups, setSubgroups] = useState<Subgroup[] | null>(null);
   const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
+  const [stats, setStats] = useState<CurrencyExpenseStats[] | null>(null);
   const [newSubgroupName, setNewSubgroupName] = useState("");
   const [creatingSubgroup, setCreatingSubgroup] = useState(false);
 
   const isAdmin = members?.find((m) => m.userId === currentUserId)?.role === "admin";
 
   const load = useCallback(async () => {
-    const [detailRes, membersRes, subgroupsRes, expensesRes] = await Promise.all([
+    const [detailRes, membersRes, subgroupsRes, expensesRes, statsRes] = await Promise.all([
       apiFetch(`/api/groups/${groupId}`),
       apiFetch(`/api/groups/${groupId}/members`),
       apiFetch(`/api/groups/${groupId}/subgroups`),
       apiFetch(`/api/groups/${groupId}/expenses`),
+      apiFetch(`/api/groups/${groupId}/expenses/stats`),
     ]);
     if (detailRes.ok) setDetail(await detailRes.json());
     if (membersRes.ok) setMembers((await membersRes.json()).members);
     if (subgroupsRes.ok) setSubgroups((await subgroupsRes.json()).subgroups);
     if (expensesRes.ok) setExpenses((await expensesRes.json()).expenses);
+    if (statsRes.ok) setStats((await statsRes.json()).stats);
   }, [groupId]);
 
   useEffect(() => {
@@ -182,6 +187,16 @@ export default function GroupDetailClient({
         {detail.memberCount} / {detail.group.maxMembers} miembros · {detail.subgroupCount} /{" "}
         {detail.group.maxSubgroups} subgrupos
       </p>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Estadisticas</CardTitle>
+          <CardDescription>Vista total del grupo: gastos pagados y reparto por miembro.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ExpenseStatsCharts stats={stats} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
@@ -276,8 +291,9 @@ export default function GroupDetailClient({
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Miembros</CardTitle>
+          <InviteMemberDialog groupId={groupId} />
         </CardHeader>
         <CardContent>
           <Table>
@@ -333,7 +349,11 @@ export default function GroupDetailClient({
             <ul className="flex flex-wrap gap-2">
               {subgroups.map((subgroup) => (
                 <li key={subgroup.id}>
-                  <Badge variant="outline">{subgroup.name}</Badge>
+                  <Link href={`/groups/${groupId}/subgroups/${subgroup.id}`}>
+                    <Badge variant="outline" className="cursor-pointer hover:bg-accent">
+                      {subgroup.name}
+                    </Badge>
+                  </Link>
                 </li>
               ))}
             </ul>

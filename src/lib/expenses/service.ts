@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, expenses, expenseShares, subgroupMemberships, users, auditLogs } from "@/db";
 import type { Tx } from "@/db";
 import { AppError } from "@/lib/errors";
@@ -163,6 +163,112 @@ export async function listExpenses(groupId: string, userId: string, subgroupId?:
     .innerJoin(users, eq(users.id, expenses.payerId))
     .where(conditions)
     .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
+}
+
+export interface MemberAmount {
+  userId: string;
+  alias: string;
+  totalCents: number;
+}
+
+export interface CurrencyExpenseStats {
+  currencyCode: string;
+  totalCents: number;
+  paidByMember: MemberAmount[];
+  shareByMember: MemberAmount[];
+}
+
+/**
+ * Estadisticas agregadas de gastos para graficas (grupo completo o un
+ * subgrupo): por cada moneda presente en el ambito, cuanto ha pagado cada
+ * miembro (`paidByMember`) y cuanto le corresponde segun el reparto
+ * (`shareByMember`). Se separan por moneda porque sumar importes de
+ * monedas distintas sin conversion daria una cifra sin sentido.
+ */
+export async function getExpenseStats(groupId: string, userId: string, subgroupId?: string) {
+  await requireMembership(groupId, userId);
+  const conditions = subgroupId
+    ? and(eq(expenses.groupId, groupId), eq(expenses.subgroupId, subgroupId))
+    : eq(expenses.groupId, groupId);
+
+  const expenseRows = await db
+    .select({
+      id: expenses.id,
+      payerId: expenses.payerId,
+      amount: expenses.amount,
+      currencyCode: expenses.currencyCode,
+    })
+    .from(expenses)
+    .where(conditions);
+
+  const expenseIds = expenseRows.map((e) => e.id);
+  const shareRows = expenseIds.length
+    ? await db
+        .select({
+          expenseId: expenseShares.expenseId,
+          userId: expenseShares.userId,
+          shareAmount: expenseShares.shareAmount,
+        })
+        .from(expenseShares)
+        .where(inArray(expenseShares.expenseId, expenseIds))
+    : [];
+
+  const currencyByExpenseId = new Map(expenseRows.map((e) => [e.id, e.currencyCode]));
+  const involvedUserIds = new Set<string>();
+  for (const e of expenseRows) involvedUserIds.add(e.payerId);
+  for (const s of shareRows) involvedUserIds.add(s.userId);
+
+  const aliasRows = involvedUserIds.size
+    ? await db
+        .select({ id: users.id, alias: users.alias })
+        .from(users)
+        .where(inArray(users.id, [...involvedUserIds]))
+    : [];
+  const aliasByUserId = new Map(aliasRows.map((u) => [u.id, u.alias]));
+
+  const paidTotals = new Map<string, Map<string, number>>();
+  const shareTotals = new Map<string, Map<string, number>>();
+
+  function addTo(map: Map<string, Map<string, number>>, currencyCode: string, memberId: string, cents: number) {
+    const byMember = map.get(currencyCode) ?? new Map<string, number>();
+    byMember.set(memberId, (byMember.get(memberId) ?? 0) + cents);
+    map.set(currencyCode, byMember);
+  }
+
+  for (const e of expenseRows) {
+    addTo(paidTotals, e.currencyCode, e.payerId, parseAmountToCents(e.amount));
+  }
+  for (const s of shareRows) {
+    const currencyCode = currencyByExpenseId.get(s.expenseId);
+    if (!currencyCode) continue;
+    addTo(shareTotals, currencyCode, s.userId, parseAmountToCents(s.shareAmount));
+  }
+
+  const currencyCodes = new Set<string>([...paidTotals.keys(), ...shareTotals.keys()]);
+
+  function toMemberAmounts(byMember: Map<string, number> | undefined): MemberAmount[] {
+    if (!byMember) return [];
+    return [...byMember.entries()]
+      .map(([memberId, totalCents]) => ({
+        userId: memberId,
+        alias: aliasByUserId.get(memberId) ?? "Usuario",
+        totalCents,
+      }))
+      .sort((a, b) => b.totalCents - a.totalCents);
+  }
+
+  const stats: CurrencyExpenseStats[] = [...currencyCodes].map((currencyCode) => {
+    const paidByMember = toMemberAmounts(paidTotals.get(currencyCode));
+    const totalCents = paidByMember.reduce((sum, m) => sum + m.totalCents, 0);
+    return {
+      currencyCode,
+      totalCents,
+      paidByMember,
+      shareByMember: toMemberAmounts(shareTotals.get(currencyCode)),
+    };
+  });
+
+  return stats.sort((a, b) => b.totalCents - a.totalCents);
 }
 
 export async function getExpenseDetail(groupId: string, expenseId: string, userId: string) {
@@ -330,9 +436,24 @@ export async function validateExpense(groupId: string, expenseId: string, acting
  * Historial completo de cambios de un gasto (creacion, ediciones,
  * validaciones, borrado). Se apoya en `audit_logs` filtrando por grupo, asi
  * que sigue disponible aunque el gasto ya se haya borrado.
+ *
+ * Defensa en profundidad (Fase 4): si el gasto todavia existe, se verifica
+ * explicitamente que pertenece a `groupId` antes de consultar el
+ * historial (en vez de confiar unicamente en el `group_id` grabado en cada
+ * fila de `audit_logs`), para que un `expenseId` de otro grupo nunca
+ * devuelva datos aunque cambiara la forma de escribir el audit log.
  */
 export async function getExpenseHistory(groupId: string, expenseId: string, userId: string) {
   await requireMembership(groupId, userId);
+
+  const [currentExpense] = await db
+    .select({ groupId: expenses.groupId })
+    .from(expenses)
+    .where(eq(expenses.id, expenseId))
+    .limit(1);
+  if (currentExpense && currentExpense.groupId !== groupId) {
+    throw new AppError(404, "Gasto no encontrado", "expense_not_found");
+  }
 
   return db
     .select({

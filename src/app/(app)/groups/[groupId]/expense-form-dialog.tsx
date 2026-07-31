@@ -54,6 +54,7 @@ export function ExpenseFormDialog({
   subgroups,
   onSaved,
   editExpenseId,
+  lockedSubgroupId,
 }: {
   groupId: string;
   members: Member[];
@@ -61,6 +62,8 @@ export function ExpenseFormDialog({
   onSaved: () => void | Promise<void>;
   /** Si se indica, el dialogo edita ese gasto en vez de crear uno nuevo. */
   editExpenseId?: string;
+  /** Si se indica, el gasto queda fijado a este subgrupo y se oculta el selector. */
+  lockedSubgroupId?: string;
 }) {
   const isEditMode = Boolean(editExpenseId);
   const [open, setOpen] = useState(false);
@@ -73,7 +76,7 @@ export function ExpenseFormDialog({
   const [description, setDescription] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [payerId, setPayerId] = useState<string>(members[0]?.userId ?? "");
-  const [subgroupId, setSubgroupId] = useState<string>("none");
+  const [subgroupId, setSubgroupId] = useState<string>(lockedSubgroupId ?? "none");
   const [method, setMethod] = useState<SplitMethod>("equal");
   const [rows, setRows] = useState<Record<string, ParticipantRow>>({});
 
@@ -111,7 +114,7 @@ export function ExpenseFormDialog({
         setDescription(expense.description);
         setExpenseDate(expense.expenseDate);
         setPayerId(expense.payerId);
-        setSubgroupId(expense.subgroupId ?? "none");
+        setSubgroupId(lockedSubgroupId ?? expense.subgroupId ?? "none");
         setMethod(expense.splitMethod);
 
         const nextRows: Record<string, ParticipantRow> = {};
@@ -191,13 +194,14 @@ export function ExpenseFormDialog({
       };
     }
 
+    const effectiveSubgroupId = lockedSubgroupId ?? (subgroupId === "none" ? undefined : subgroupId);
     const payload = {
       amount,
       currencyCode,
       description,
       expenseDate,
       payerId,
-      subgroupId: subgroupId === "none" ? undefined : subgroupId,
+      subgroupId: effectiveSubgroupId,
       split,
     };
 
@@ -322,7 +326,7 @@ export function ExpenseFormDialog({
               </div>
             </div>
 
-            {subgroups.length > 0 ? (
+            {!lockedSubgroupId && subgroups.length > 0 ? (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="expense-subgroup">Subgrupo (opcional)</Label>
                 <Select value={subgroupId} onValueChange={setSubgroupId}>

@@ -4,6 +4,8 @@ import { db, users } from "@/db";
 import { recoverSchema } from "@/lib/validation/auth";
 import { hashSecret, verifySecret, DUMMY_HASH } from "@/lib/auth/password";
 import { generateRecoveryCode, normalizeRecoveryCode } from "@/lib/auth/recovery-code";
+import { enforceAuthRateLimit, recordAuthAttempt } from "@/lib/auth/auth-rate-limit";
+import { errorResponse } from "@/lib/api/handle-error";
 
 export const runtime = "nodejs";
 
@@ -33,17 +35,27 @@ export async function POST(request: Request) {
     { status: 401 },
   );
 
+  try {
+    await enforceAuthRateLimit(alias, "recover");
+  } catch (error) {
+    return errorResponse(error);
+  }
+
   const [user] = await db.select().from(users).where(eq(users.alias, alias)).limit(1);
 
   if (!user || !user.recoveryCodeHash) {
     await verifySecret(DUMMY_HASH, normalizeRecoveryCode(recoveryCode));
+    await recordAuthAttempt(alias, "recover", false);
     return genericError;
   }
 
   const valid = await verifySecret(user.recoveryCodeHash, normalizeRecoveryCode(recoveryCode));
   if (!valid) {
+    await recordAuthAttempt(alias, "recover", false);
     return genericError;
   }
+
+  await recordAuthAttempt(alias, "recover", true);
 
   const newPasswordHash = await hashSecret(newPassword);
   const newRecoveryCode = generateRecoveryCode();

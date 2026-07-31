@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { aliasSchema, passwordSchema } from "./auth";
 
 export const GROUP_MAX_MEMBERS = 64;
 export const GROUP_MAX_SUBGROUPS = 32;
@@ -31,7 +32,13 @@ export const joinGroupSchema = z.object({
   inviteCode: z.string().trim().min(1, "El codigo de invitacion es obligatorio"),
 });
 
+export const acceptInvitationSchema = z.object({
+  alias: aliasSchema,
+  password: passwordSchema,
+});
+
 export type CreateGroupInput = z.infer<typeof createGroupSchema>;
 export type UpdateGroupInput = z.infer<typeof updateGroupSchema>;
 export type CreateSubgroupInput = z.infer<typeof createSubgroupSchema>;
 export type JoinGroupInput = z.infer<typeof joinGroupSchema>;
+export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;

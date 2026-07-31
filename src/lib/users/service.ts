@@ -1,18 +1,80 @@
-import { eq } from "drizzle-orm";
-import { db, users } from "@/db";
+import { and, eq } from "drizzle-orm";
+import { alias as aliasTable } from "drizzle-orm/pg-core";
+import { db, users, memberships } from "@/db";
+import type { Tx } from "@/db";
 import { AppError } from "@/lib/errors";
+import { isUniqueViolation } from "@/lib/db/errors";
+import { hashSecret } from "@/lib/auth/password";
+import { generateRecoveryCode, normalizeRecoveryCode } from "@/lib/auth/recovery-code";
 
 /**
  * Perfil publico de un usuario (solo lectura). Por diseno de privacidad no
  * se expone el hash de contrasena ni el hash del codigo de recuperacion:
  * solo alias y fecha de alta.
+ *
+ * Autorizacion (Fase 4): solo se puede consultar el perfil propio o el de
+ * alguien con quien se comparte al menos un grupo (evita que cualquier
+ * usuario autenticado pueda enumerar alias por UUID sin relacion alguna).
+ * Si no hay relacion, se devuelve el mismo error 404 que si el usuario no
+ * existiera, para no revelar si un UUID corresponde a una cuenta real.
  */
-export async function getPublicProfile(userId: string) {
+export async function getPublicProfile(requestingUserId: string, targetUserId: string) {
+  if (requestingUserId !== targetUserId) {
+    const requesterMemberships = aliasTable(memberships, "requester_memberships");
+    const [shared] = await db
+      .select({ id: memberships.id })
+      .from(memberships)
+      .innerJoin(requesterMemberships, eq(requesterMemberships.groupId, memberships.groupId))
+      .where(and(eq(memberships.userId, targetUserId), eq(requesterMemberships.userId, requestingUserId)))
+      .limit(1);
+    if (!shared) {
+      throw new AppError(404, "Usuario no encontrado", "user_not_found");
+    }
+  }
+
   const [user] = await db
     .select({ id: users.id, alias: users.alias, createdAt: users.createdAt })
     .from(users)
-    .where(eq(users.id, userId))
+    .where(eq(users.id, targetUserId))
     .limit(1);
   if (!user) throw new AppError(404, "Usuario no encontrado", "user_not_found");
   return user;
+}
+
+/**
+ * Crea un usuario nuevo (alias + contrasena) de forma segura frente a
+ * condiciones de carrera: aunque se compruebe la disponibilidad del alias
+ * antes de insertar (UX rapida, mensaje claro), dos registros concurrentes
+ * con el mismo alias solo pueden dar lugar a una fila real gracias al
+ * constraint UNIQUE de `users.alias`; el segundo insert se traduce en un
+ * 409 explicito en vez de un error 500 sin manejar. Reutilizado por el
+ * registro normal y por la aceptacion de invitaciones a grupo.
+ */
+export async function createUserWithAlias(
+  alias: string,
+  password: string,
+  client: Tx | typeof db = db,
+) {
+  const existing = await client.select({ id: users.id }).from(users).where(eq(users.alias, alias)).limit(1);
+  if (existing.length > 0) {
+    throw new AppError(409, "El alias ya esta en uso", "alias_taken");
+  }
+
+  const passwordHash = await hashSecret(password);
+  const recoveryCode = generateRecoveryCode();
+  const recoveryCodeHash = await hashSecret(normalizeRecoveryCode(recoveryCode));
+
+  try {
+    const [user] = await client
+      .insert(users)
+      .values({ alias, passwordHash, recoveryCodeHash })
+      .returning({ id: users.id, alias: users.alias });
+    if (!user) throw new AppError(500, "No se pudo crear el usuario");
+    return { user, recoveryCode };
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new AppError(409, "El alias ya esta en uso", "alias_taken");
+    }
+    throw error;
+  }
 }

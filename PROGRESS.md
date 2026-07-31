@@ -5,8 +5,8 @@
 
 ## Estado actual
 
-**Fase completada: Fase 3 — Gastos y repartos.**
-Pendiente confirmacion del usuario para iniciar Fase 4 (Seguridad y permisos).
+**Fase completada: Fase 4 — Seguridad y permisos.**
+Pendiente confirmacion del usuario para iniciar Fase 5 (Auditoria inmutable).
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -597,17 +597,175 @@ implementada completa (esquema + servicio + rutas + UI):
 - Build (`next build`) y tests (`vitest run`, 18/18) verificados en este
   entorno tras los cambios; typecheck (`tsc --noEmit`) limpio.
 
-## Proximos pasos (Fase 4 — Seguridad y permisos)
+## Fase 4 (adelanto 2) — Alias unico race-safe, invitaciones personales y graficas
 
-- La regla de borrado (creador o admin) ya esta implementada en
-  `deleteExpense` (Fase 3, adelantada por ser inseparable de la entidad).
-  Verificar/reforzar que se aplique de forma consistente tambien a
-  ediciones futuras y a nivel de middleware/servicio, no solo frontend.
-- Proteccion contra manipulacion de IDs: revisar que **todas** las rutas
-  con `[groupId]`/`[subgroupId]`/`[expenseId]` verifiquen pertenencia
-  real (ya se hace via `requireMembership`/`getSubgroupInGroup`/ownership
-  checks en cada servicio, pero Fase 4 pide una revision sistematica y
-  quiza un middleware/helper comun).
-- Considerar mover la logica de autorizacion repetida
-  (`requireMembership` + comprobaciones de scope) a un layer explicito de
-  middleware de API si se detecta duplicacion significativa.
+- **Alias unico frente a condiciones de carrera**: `src/lib/users/service.ts`
+  (`createUserWithAlias`) comprueba disponibilidad antes de insertar (mensaje
+  rapido) y ademas captura la violacion real del `UNIQUE` de `users.alias`
+  (`isUniqueViolation`, SQLSTATE 23505) devolviendo 409 en vez de un 500 sin
+  controlar si dos registros con el mismo alias llegan en paralelo.
+  Reutilizada por `POST /api/auth/register` y por la aceptacion de
+  invitaciones (mismo codigo, sin duplicar logica de hash/codigo de
+  recuperacion).
+- **Invitaciones personales a grupo** (`src/db/schema/group-invitations.ts`,
+  tabla `group_invitations`, migracion `drizzle/0001_spicy_mathemanic.sql`):
+  distintas del `invite_code` publico del grupo (reutilizable, sin
+  caducidad). Un enlace de invitacion (`src/lib/groups/invitation-service.ts`):
+  - Lo genera cualquier miembro del grupo (`POST
+    /api/groups/[groupId]/invitations`), token aleatorio de 32 caracteres
+    (nanoid), caduca a las 24h (`INVITATION_TTL_MS`).
+  - Es de un solo uso: `acceptGroupInvitation` bloquea la fila con
+    `for("update")` dentro de una transaccion para que no pueda consumirse
+    dos veces en paralelo; verifica caducidad/uso previo/limite de
+    miembros del grupo antes de crear el usuario.
+  - Pagina publica `/invite/[token]` (sin sesion previa, bajo el grupo de
+    rutas `(auth)`): muestra el nombre del grupo y un formulario de
+    alias+contrasena; al aceptar crea la cuenta, une al grupo y abre
+    sesion automaticamente (misma UX que `/register`).
+  - UI: boton "Invitar" en la tarjeta "Miembros" de cada grupo
+    (`invite-member-dialog.tsx`), lista enlaces pendientes/caducados y
+    copia la URL al portapapeles.
+- **Navegacion a subgrupos**: los badges de subgrupo en la pagina de grupo
+  ahora enlazan a `/groups/[groupId]/subgroups/[subgroupId]`, una pagina
+  propia con sus miembros, sus gastos (filtrados por `subgroupId`, mismas
+  acciones editar/validar/borrar/historial que a nivel de grupo) y sus
+  graficas. Nueva ruta `GET /api/groups/[groupId]/subgroups/[subgroupId]`
+  (`getSubgroupDetail`, subgrupo + miembros con alias).
+  `ExpenseFormDialog` gano la prop `lockedSubgroupId` para crear/editar un
+  gasto ya fijado a ese subgrupo (oculta el selector).
+- **Graficas de gastos** (`recharts@3.10.1`, anadido como dependencia
+  nueva): `src/lib/expenses/service.ts` (`getExpenseStats`) agrega, por
+  cada moneda presente en el ambito (grupo completo o un subgrupo), cuanto
+  ha pagado cada miembro y cuanto le corresponde segun el reparto (en
+  centimos enteros, mismo criterio anti-coma-flotante que el resto del
+  proyecto). Expuesto en `GET /api/groups/[groupId]/expenses/stats`
+  (parametro opcional `?subgroupId=`) y renderizado con
+  `src/components/expense-stats-charts.tsx` (barras de "pagado por
+  miembro" + tarta de "reparto por miembro"), integrado tanto en la vista
+  de grupo como en la de subgrupo. Las monedas se muestran en graficas
+  separadas para no sumar importes heterogeneos sin conversion.
+- Build (`next build`), typecheck (`tsc --noEmit`) y tests (`vitest run`,
+  18/18) verificados en este entorno tras los cambios.
+
+## Bugfix — Un usuario nuevo no se anadia a los subgrupos existentes del grupo
+
+`joinGroupByInviteCode` y `acceptGroupInvitation` creaban la membresia de
+grupo pero nunca insertaban filas en `subgroup_memberships`: un miembro
+nuevo (por codigo de invitacion o por invitacion personal) quedaba fuera de
+todos los subgrupos ya existentes del grupo, por diseno todo miembro de un
+grupo pertenece automaticamente a todos sus subgrupos (los subgrupos son un
+filtro de gastos, no un mecanismo de exclusion de acceso).
+
+- Nuevo helper `addUserToAllGroupSubgroups(tx, groupId, userId)` en
+  `src/lib/groups/subgroup-service.ts` (inserta en `subgroup_memberships`
+  para todos los subgrupos del grupo, `onConflictDoNothing()` por
+  idempotencia); llamado dentro de la misma transaccion en
+  `joinGroupByInviteCode` (`src/lib/groups/service.ts`) y en
+  `acceptGroupInvitation` (`src/lib/groups/invitation-service.ts`).
+- Backfill puntual ejecutado contra la BD de Neon para corregir el dato ya
+  inconsistente (miembros existentes que se habian unido antes del fix):
+  `insert into subgroup_memberships select ... from subgroups join
+  memberships ... on conflict do nothing` (1 fila corregida en este
+  entorno).
+- Verificado con `tsc --noEmit`, `vitest run` (18/18) y `next build`.
+
+## Fase 4 — Seguridad y permisos (completada)
+
+### Auditoria sistematica de autorizacion en todas las rutas API
+
+Se reviso **cada** `route.ts` bajo `src/app/api/` (uno a uno, junto con el
+servicio que invoca) confirmando el patron: `requireSession()` → servicio
+que llama `requireMembership`/`requireGroupAdmin` → condiciones SQL
+`WHERE` que encadenan el recurso con su padre (`groupId`/`subgroupId`).
+Resultado de la auditoria: **no se encontro ningun IDOR explotable** —
+cuando un `groupId`/`subgroupId`/`expenseId`/`userId` no coinciden
+realmente entre si, las consultas fallan de forma segura (404/403) en vez
+de filtrar o mutar datos de otro grupo. Casos concretos verificados:
+`removeMember` bloquea auto-eliminacion; `addSubgroupMember` comprueba que
+el subgrupo pertenece al grupo Y que el usuario destino ya es miembro del
+grupo; `validateExpense` exige ser el creador original del gasto;
+`updateExpense`/`deleteExpense` usan la misma regla (creador o admin) de
+forma consistente. Se identificaron y corrigieron dos puntos de mejora
+(ver abajo): perfil publico sin relacion y falta de rate limiting en
+autenticacion.
+
+### Rate limiting en login y recuperacion de cuenta (mitigacion de fuerza bruta)
+
+Hasta ahora solo la creacion de gastos tenia rate limiting; login y
+`/api/auth/recover` no tenian ninguno, permitiendo probar contrasenas o
+codigos de recuperacion sin limite. Nueva tabla `auth_attempts`
+(`src/db/schema/auth-attempts.ts`, migracion
+`drizzle/0002_elite_misty_knight.sql`) + `src/lib/auth/auth-rate-limit.ts`:
+
+- `enforceAuthRateLimit(alias, "login" | "recover")`: cuenta intentos
+  fallidos recientes de ese alias (ventana configurable via `app_config`,
+  15 min por defecto) y devuelve 429 si supera el limite (10 por
+  defecto, tambien configurable via `app_config` sin redeploy, mismo
+  patron que `expense_creation_rate_limit_seconds` de Fase 3).
+- Se cuenta por **alias**, no por IP: esta app no almacena IPs en ninguna
+  tabla por diseno de privacidad (Fase 1), asi que limitar por IP
+  penalizaria a usuarios legitimos detras del mismo NAT y romperia esa
+  decision de diseno.
+- Se registra un intento fallido **tanto si el alias no existe como si
+  la contrasena/codigo es incorrecto** (login/recover), para no crear un
+  canal lateral donde la ausencia de 429 revele que un alias no existe.
+- Login y recover se mantienen accion-independientes (columna `action`)
+  para que agotar el limite de uno no bloquee el otro.
+
+### Perfil publico restringido a relacion real (antes: enumeracion abierta)
+
+`GET /api/users/[userId]` permitia a cualquier usuario autenticado
+consultar el alias/fecha de alta de **cualquier** UUID de usuario, sin
+relacion alguna con el (enumeracion de usuarios). `getPublicProfile`
+(`src/lib/users/service.ts`) ahora exige que el solicitante sea el propio
+usuario **o** comparta al menos un grupo con el usuario objetivo (self-join
+sobre `memberships` via `alias()` de `drizzle-orm/pg-core`); si no hay
+relacion, se devuelve el mismo error 404 que si el usuario no existiera,
+para no distinguir "existe pero no lo conoces" de "no existe". Esto no
+rompe la funcionalidad pedida (ver el perfil de miembros de tus grupos
+pinchando su alias) porque esa es exactamente la relacion permitida.
+
+### Defensa en profundidad en el historial de gastos
+
+`getExpenseHistory` confiaba unicamente en el `group_id` grabado en cada
+fila de `audit_logs` para filtrar el historial por grupo (ya era seguro en
+la practica, `expenses.groupId` es inmutable). Ahora, si el gasto todavia
+existe, se verifica **explicitamente** que su `groupId` actual coincide
+con el del path antes de devolver el historial, para no depender
+implicitamente de que el audit log se siga escribiendo siempre igual en
+el futuro.
+
+### Cabeceras de seguridad HTTP
+
+`next.config.ts` anade `headers()` global con `X-Content-Type-Options:
+nosniff`, `X-Frame-Options: DENY` (mitiga clickjacking), `Referrer-Policy:
+strict-origin-when-cross-origin`, `Permissions-Policy` restrictiva
+(camara/microfono/geolocalizacion desactivados) y
+`X-DNS-Prefetch-Control: off`. No se fija HSTS explicitamente porque
+Vercel ya la anade automaticamente en produccion sobre HTTPS.
+
+### Revision de la regla de permisos en edicion/borrado de gastos
+
+Confirmado (sin cambios de codigo, ya estaba correcto desde el adelanto de
+Fase 4 anterior): `updateExpense` y `deleteExpense` aplican exactamente la
+misma regla de autorizacion (creador del gasto o administrador del grupo),
+verificada a nivel de servicio (no solo frontend) en ambos casos.
+
+### Pendiente / fuera de alcance de esta fase
+
+- No se implemento un "leave group" (abandonar grupo voluntariamente) —
+  gap funcional identificado en la auditoria, no de seguridad; sigue
+  pendiente desde Fase 2, se puede abordar si se pide explicitamente.
+- La politica de "cualquier miembro puede generar invitaciones / anadir
+  miembros a subgrupos" (no solo el admin) se mantiene como decision de
+  diseno explicita (documentada ya en Fases 2 y 4-adelanto), no se
+  restringe a admin salvo que se solicite lo contrario.
+- Verificado con `tsc --noEmit`, `vitest run` (18/18) y `next build` tras
+  todos los cambios de esta fase.
+
+## Proximos pasos (Fase 5 — Auditoria inmutable)
+
+- `audit_logs` se usa activamente desde Fase 4 (historial de gastos) pero
+  todavia no tiene la regla/trigger SQL que impida `UPDATE`/`DELETE` sobre
+  la tabla (mencionado desde el diseno original en Fase 0, nunca
+  implementado). Es el elemento pendiente mas directo de cara a Fase 5.

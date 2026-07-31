@@ -3,6 +3,7 @@ import { db, groups, memberships, subgroups, users } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { generateInviteCode } from "./invite-code";
+import { addUserToAllGroupSubgroups } from "./subgroup-service";
 import { GROUP_MAX_MEMBERS } from "@/lib/validation/groups";
 
 const INVITE_CODE_MAX_ATTEMPTS = 5;
@@ -126,6 +127,8 @@ export async function joinGroupByInviteCode(userId: string, inviteCode: string) 
       .insert(memberships)
       .values({ groupId: group.id, userId, role: "member" })
       .returning();
+
+    await addUserToAllGroupSubgroups(tx, group.id, userId);
 
     return { group, membership };
   });

@@ -1,9 +1,28 @@
 import { and, count, eq } from "drizzle-orm";
-import { db, groups, subgroups, subgroupMemberships } from "@/db";
+import { db, groups, subgroups, subgroupMemberships, users } from "@/db";
+import type { Tx } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { getMembership, requireMembership } from "./service";
 import { GROUP_MAX_SUBGROUPS } from "@/lib/validation/groups";
+
+/**
+ * Anade a un usuario a todos los subgrupos existentes de un grupo. Se usa
+ * cuando el usuario se une al grupo (via codigo de invitacion o invitacion
+ * personal): por diseno, todo miembro del grupo pertenece automaticamente
+ * a todos sus subgrupos (que a su vez son solo un filtro de gastos, no un
+ * mecanismo de exclusion de acceso). Recibe `tx` para ejecutarse dentro de
+ * la misma transaccion que crea la membresia de grupo.
+ */
+export async function addUserToAllGroupSubgroups(tx: Tx, groupId: string, userId: string) {
+  const groupSubgroups = await tx.select({ id: subgroups.id }).from(subgroups).where(eq(subgroups.groupId, groupId));
+  if (groupSubgroups.length === 0) return;
+
+  await tx
+    .insert(subgroupMemberships)
+    .values(groupSubgroups.map((subgroup) => ({ subgroupId: subgroup.id, userId })))
+    .onConflictDoNothing();
+}
 
 export async function createSubgroup(groupId: string, userId: string, name: string) {
   await requireMembership(groupId, userId);
@@ -52,6 +71,20 @@ export async function getSubgroupInGroup(groupId: string, subgroupId: string) {
     .limit(1);
   if (!subgroup) throw new AppError(404, "Subgrupo no encontrado", "subgroup_not_found");
   return subgroup;
+}
+
+/** Detalle de un subgrupo (para su pagina propia): datos + miembros con alias. */
+export async function getSubgroupDetail(groupId: string, subgroupId: string, userId: string) {
+  await requireMembership(groupId, userId);
+  const subgroup = await getSubgroupInGroup(groupId, subgroupId);
+
+  const members = await db
+    .select({ userId: subgroupMemberships.userId, alias: users.alias })
+    .from(subgroupMemberships)
+    .innerJoin(users, eq(users.id, subgroupMemberships.userId))
+    .where(eq(subgroupMemberships.subgroupId, subgroupId));
+
+  return { subgroup, members };
 }
 
 export async function addSubgroupMember(
