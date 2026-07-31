@@ -17,6 +17,20 @@ const nextConfig: NextConfig = {
     // en su lugar. Ver aviso al arrancar `next dev` con TS 7 instalado.
     useTypeScriptCli: true,
   },
+  // `argon2` (hash de contrasenas, Fase 1) es un modulo nativo (.node
+  // binario). Next.js ya lo excluye del bundle de servidor por defecto,
+  // pero lo declaramos explicitamente por claridad y para cubrir
+  // versiones/entornos donde ese default pueda no aplicarse.
+  serverExternalPackages: ["argon2"],
+  // Red de seguridad para el despliegue en Vercel: el tracer de archivos
+  // de salida (@vercel/nft) puede no detectar el binario nativo de argon2
+  // al empaquetar cada funcion serverless si se carga de forma dinamica;
+  // esto fuerza su inclusion explicita en las rutas que lo usan
+  // (autenticacion: login/registro/recuperacion/aceptar invitacion).
+  outputFileTracingIncludes: {
+    "/api/auth/**": ["./node_modules/argon2/prebuilds/**/*"],
+    "/api/invitations/**": ["./node_modules/argon2/prebuilds/**/*"],
+  },
   async headers() {
     // Cabeceras de seguridad HTTP basicas (Fase 4), aplicadas a toda la
     // app: mitigan clickjacking (X-Frame-Options), sniffing de MIME

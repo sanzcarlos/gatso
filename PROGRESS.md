@@ -940,3 +940,73 @@ acoplar el modelo de auditoria a esa suposicion de cara a fases futuras.
 - `public/icons/` solo tiene el SVG del favicon (Fase 4-adelanto); falta
   `manifest.json`, iconos en los tamanos estandar de PWA y configuracion
   de service worker/instalabilidad en `next.config.ts`.
+
+## Preparacion para despliegue en Vercel (fuera de la numeracion de fases)
+
+Ajustes necesarios para que el proyecto se despliegue correctamente en
+Vercel, solicitados explicitamente por el usuario. Verificado contra la
+documentacion oficial de Vercel (Node.js Runtimes) en el momento de
+escribir esto, no supuesto:
+
+- **`package.json` `engines.node` corregido de `>=26.0.0` a `24.x`**:
+  Vercel actualmente solo ofrece **20.x/22.x/24.x** como runtime de
+  Functions; Node 26.0.0 (released mayo 2026) no sera Active LTS hasta
+  octubre 2026 y todavia no esta disponible como opcion en la plataforma.
+  Un `engines.node` pidiendo un major no soportado no produce un error
+  claro: Vercel puede ignorarlo silenciosamente y usar el valor de
+  Project Settings en su lugar, lo que habria dejado el pin del proyecto
+  sin efecto real. `24.x` coincide con Node ya instalado en este entorno
+  de desarrollo (`v24.18.0`) y con el default actual de Vercel para
+  proyectos nuevos; Next.js 16 solo exige Node >= 20.9, asi que no hay
+  perdida funcional. Con `engine-strict=true` en `.npmrc`, se verifico que
+  un mismatch de `engines.node` solo emite un WARN (no bloquea
+  `pnpm install`), pero se corrige igualmente por claridad y porque
+  Vercel si usa este campo para seleccionar el runtime real.
+- **`next.config.ts`: `serverExternalPackages: ["argon2"]` +
+  `outputFileTracingIncludes`** para las rutas de autenticacion
+  (`/api/auth/**`, `/api/invitations/**`, las que usan `hashSecret`/
+  `verifySecret` de Fase 1). `argon2` es un modulo nativo (binario
+  `.node` compilado); aunque Next.js ya lo excluye del bundle de servidor
+  por defecto, se declara explicitamente y se anade la inclusion forzada
+  del binario prebuilding como red de seguridad frente a un problema
+  documentado donde el rastreador de archivos de Vercel (`@vercel/nft`)
+  no siempre detecta binarios nativos cargados de forma dinamica,
+  causando `Error: No native build was found...` solo en produccion (no
+  reproducible en local).
+- **`pnpm-workspace.yaml` (`allowBuilds`) ya estaba correctamente
+  configurado** desde que se anadio `recharts` en una fase anterior:
+  verificado que la sintaxis (`allowBuilds:` como mapa, no
+  `onlyBuiltDependencies:` como lista) es la correcta para pnpm 11.x (el
+  formato cambio entre pnpm 10 y 11); confirmado que con `CI=true` (que
+  Vercel fija automaticamente) `pnpm install --frozen-lockfile` no pide
+  confirmacion interactiva y respeta el allowlist ya commiteado. No
+  requirio cambios, solo verificacion.
+- **`README.md` ampliado** con una guia de despliegue completa: tabla de
+  variables de entorno necesarias (marcando que `NODE_ENV` **no** debe
+  fijarse manualmente, Vercel la reserva), explicacion de por que las
+  migraciones de base de datos deben ejecutarse manualmente contra la
+  base de datos de produccion (`pnpm db:generate`/`pnpm db:migrate`) y
+  nunca desde el propio `buildCommand` de Vercel (evita migrar en cada
+  build de Preview contra la misma base de datos), y nota sobre elegir
+  la region de Vercel Functions mas cercana a la region de la base de
+  datos Neon si el plan lo permite.
+- `.env.example`: comentario anadido a `NODE_ENV` recordando que no se
+  fija manualmente en Vercel.
+- Verificado end-to-end en este entorno: `tsc --noEmit` limpio,
+  `vitest run` (18/18), `next build` exitoso (con las nuevas opciones de
+  `next.config.ts` aplicadas sin error), y
+  `CI=true pnpm install --frozen-lockfile` (simulacion exacta del paso de
+  instalacion de Vercel) sin warnings ni errores tras el fix de
+  `engines.node`.
+
+### Pendiente (accion manual del usuario en Vercel, no automatizable desde aqui)
+
+- Conectar el repositorio en Vercel y configurar las variables de entorno
+  de la tabla anterior (`DATABASE_URL`, `AUTH_SECRET` como minimo).
+- Ejecutar `pnpm db:migrate` contra la base de datos de produccion antes
+  del primer despliegue (las migraciones ya existentes en `drizzle/`
+  cubren todo el esquema hasta Fase 6 inclusive).
+- Ejecutar `pnpm db:seed` contra produccion para las monedas iniciales
+  (EUR, USD), y el `UPDATE` manual documentado en Fase 6 para activar el
+  primer administrador de plataforma si se quiere gestionar monedas desde
+  produccion.

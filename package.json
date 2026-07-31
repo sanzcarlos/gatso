@@ -5,7 +5,7 @@
   "description": "Aplicacion web de control de gastos compartidos entre amigos (estilo Splitwise), con privacidad por diseno.",
   "packageManager": "pnpm@11.17.0",
   "engines": {
-    "node": ">=26.0.0",
+    "node": "24.x",
     "pnpm": ">=11.0.0"
   },
   "scripts": {

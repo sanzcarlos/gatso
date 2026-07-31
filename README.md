@@ -15,7 +15,8 @@ base de datos y estado del proyecto.
 
 ## Requisitos
 
-- Node.js >= 26
+- Node.js **24.x** (version fijada en `engines.node`; ver nota de
+  compatibilidad con Vercel en la seccion de Despliegue)
 - pnpm >= 11 (via `corepack enable`)
 
 ## Puesta en marcha
@@ -49,10 +50,67 @@ pnpm dev                     # http://localhost:3000
 | `pnpm db:studio` | UI de inspeccion de la base de datos |
 | `pnpm db:seed` | Inserta monedas iniciales (EUR, USD) si no existen |
 
-## Despliegue
+## Despliegue en Vercel
+
+### Configuracion del proyecto
 
 En Vercel, el proyecto se detecta automaticamente como pnpm por la
 presencia de `pnpm-lock.yaml`. `vercel.json` fija explicitamente
-`installCommand: pnpm install` y `buildCommand: pnpm build` por claridad.
-Variables de entorno necesarias: `DATABASE_URL`, `AUTH_SECRET`,
-`AUTH_COOKIE_NAME`, `RATE_LIMIT_EXPENSE_CREATION_SECONDS`.
+`framework: "nextjs"`, `installCommand: pnpm install` y
+`buildCommand: pnpm build` por claridad (aunque Vercel los infiere solo).
+
+### Variables de entorno (Project Settings → Environment Variables)
+
+| Variable | Obligatoria | Notas |
+|---|---|---|
+| `DATABASE_URL` | Si | Cadena de conexion Neon. Usa una base de datos **distinta** (o una [branch de Neon](https://neon.tech/docs/introduction/branching)) para Preview vs Production si quieres aislar los datos de cada entorno. |
+| `AUTH_SECRET` | Si | Genera uno nuevo especifico para produccion (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`); no reutilices el de desarrollo. |
+| `AUTH_COOKIE_NAME` | No (default `gatso_session`) | Solo si quieres un nombre de cookie distinto. |
+| `RATE_LIMIT_EXPENSE_CREATION_SECONDS` | No (default `30`) | Tambien ajustable en runtime sin redeploy via la tabla `app_config`. |
+| `NODE_ENV` | **No la anadas** | Vercel la fija automaticamente a `production` en builds de Production y Preview; anadirla manualmente puede interferir con el propio proceso de build de Next.js. |
+
+### Version de Node.js
+
+`package.json` fija `engines.node: "24.x"` (no `26.x`): a fecha de este
+despliegue, Vercel solo ofrece 20.x/22.x/24.x como runtime de Functions;
+Node 26 todavia no esta disponible en la plataforma (sera Active LTS en
+octubre de 2026). Next.js 16 solo requiere Node >= 20.9, asi que 24.x no
+supone ninguna limitacion funcional. Cuando Vercel anada soporte para
+26.x, actualiza `engines.node` y vuelve a desplegar.
+
+### Migraciones de base de datos
+
+El build de Vercel **no ejecuta migraciones automaticamente** (a
+proposito: ejecutarlas en cada build de Preview contra la misma base de
+datos de produccion seria peligroso). Antes del primer despliegue, y cada
+vez que cambie `src/db/schema/`:
+
+```bash
+# Con DATABASE_URL apuntando a la base de datos de PRODUCCION
+pnpm db:generate   # si hay cambios de esquema sin migracion generada
+pnpm db:migrate    # aplica las migraciones pendientes
+```
+
+Ejecutalo localmente (con el `DATABASE_URL` de produccion en `.env.local`
+temporalmente, o exportado en la shell) o desde un paso de CI separado con
+acceso a esa variable — nunca desde el propio `buildCommand` de Vercel.
+
+### Modulo nativo `argon2`
+
+`argon2` (hash de contrasenas) incluye un binario nativo compilado para
+Linux x64, la plataforma de build de Vercel; `pnpm-workspace.yaml` ya
+autoriza sus scripts de instalacion (`allowBuilds`) para que se compile
+sin prompts interactivos en CI. `next.config.ts` declara
+`serverExternalPackages: ["argon2"]` y `outputFileTracingIncludes` para
+las rutas de autenticacion, como red de seguridad frente a un problema
+conocido de Next.js/Vercel donde el rastreador de archivos de las
+funciones serverless no siempre detecta binarios nativos cargados de
+forma dinamica.
+
+### Region recomendada (opcional)
+
+Si tu base de datos Neon esta en una region especifica (ej.
+`eu-central-1`), en planes que permiten elegir region de Vercel Functions
+(Project Settings → Functions → Region) usa la region mas cercana (ej.
+`fra1` para Frankfurt) para minimizar la latencia entre la funcion y la
+base de datos.
