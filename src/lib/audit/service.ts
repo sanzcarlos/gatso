@@ -1,7 +1,8 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, isNull } from "drizzle-orm";
 import { db, auditLogs, users } from "@/db";
 import type { Tx } from "@/db";
 import { requireGroupAdmin } from "@/lib/groups/service";
+import { requirePlatformAdmin } from "@/lib/auth/platform-admin";
 
 /**
  * Tipos de entidad auditada (Fase 5). `entityType` es un `varchar(32)` en
@@ -14,7 +15,8 @@ export type AuditEntityType =
   | "group"
   | "subgroup"
   | "membership"
-  | "subgroup_membership";
+  | "subgroup_membership"
+  | "currency";
 
 export type AuditAction = "create" | "update" | "delete";
 
@@ -73,6 +75,32 @@ export async function getGroupAuditLog(groupId: string, actingUserId: string, li
     .from(auditLogs)
     .innerJoin(users, eq(users.id, auditLogs.actorUserId))
     .where(eq(auditLogs.groupId, groupId))
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(limit);
+}
+
+/**
+ * Historial de auditoria de entidades sin `groupId` (Fase 6: catalogo de
+ * monedas). Restringido a administradores de plataforma.
+ */
+export async function getPlatformAuditLog(actingUserId: string, limit = 100) {
+  await requirePlatformAdmin(actingUserId);
+
+  return db
+    .select({
+      id: auditLogs.id,
+      action: auditLogs.action,
+      entityType: auditLogs.entityType,
+      entityId: auditLogs.entityId,
+      actorUserId: auditLogs.actorUserId,
+      actorAlias: users.alias,
+      beforeData: auditLogs.beforeData,
+      afterData: auditLogs.afterData,
+      createdAt: auditLogs.createdAt,
+    })
+    .from(auditLogs)
+    .innerJoin(users, eq(users.id, auditLogs.actorUserId))
+    .where(isNull(auditLogs.groupId))
     .orderBy(desc(auditLogs.createdAt))
     .limit(limit);
 }

@@ -18,7 +18,11 @@ export const auditLogs = pgTable("audit_logs", {
     .references(() => users.id),
   action: auditActionEnum("action").notNull(),
   entityType: varchar("entity_type", { length: 32 }).notNull(),
-  entityId: uuid("entity_id").notNull(),
+  // varchar (no uuid): la mayoria de entidades auditadas usan UUID como PK,
+  // pero algunas (ej. "currency", cuya PK es el codigo ISO 4217 de 3
+  // letras) no. Mantenerlo como texto libre evita acoplar el log de
+  // auditoria a que toda entidad futura tenga que usar UUID.
+  entityId: varchar("entity_id", { length: 64 }).notNull(),
   groupId: uuid("group_id").references(() => groups.id, { onDelete: "set null" }),
   beforeData: jsonb("before_data"),
   afterData: jsonb("after_data"),

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -10,7 +10,7 @@ import { NotificationsBell } from "@/components/notifications-bell";
 import { apiFetch } from "@/lib/api/client-fetch";
 
 interface SiteHeaderProps {
-  session: { userId: string; alias: string } | null;
+  session: { userId: string; alias: string; isPlatformAdmin?: boolean } | null;
 }
 
 export function SiteHeader({ session }: SiteHeaderProps) {
@@ -39,6 +39,15 @@ export function SiteHeader({ session }: SiteHeaderProps) {
           {session ? (
             <Link href="/groups" className="text-muted-foreground transition-colors hover:text-foreground">
               Mis grupos
+            </Link>
+          ) : null}
+          {session?.isPlatformAdmin ? (
+            <Link
+              href="/admin/currencies"
+              className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Administracion
             </Link>
           ) : null}
         </nav>

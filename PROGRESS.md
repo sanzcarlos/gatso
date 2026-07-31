@@ -5,8 +5,8 @@
 
 ## Estado actual
 
-**Fase completada: Fase 5 — Auditoria inmutable.**
-Pendiente confirmacion del usuario para iniciar Fase 6 (Gestion de monedas).
+**Fase completada: Fase 6 — Gestion de monedas.**
+Pendiente confirmacion del usuario para iniciar Fase 7 (PWA).
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -847,3 +847,96 @@ valores actuales: `expense`, `group`, `subgroup`, `membership`,
 - Solo existe `GET /api/currencies` (listado de monedas activas). Falta
   alta/baja de monedas y el limite de 16 monedas activas mencionado en el
   diseno original (Fase 0) pero nunca implementado.
+
+## Fase 6 — Gestion de monedas (completada)
+
+### Nuevo concepto: administrador de plataforma (distinto del admin de grupo)
+
+El catalogo de monedas es global (no pertenece a ningun grupo), asi que
+el rol `memberships.role = "admin"` (por grupo) no aplicaba. Se anadio
+`users.is_platform_admin` (boolean, `false` por defecto,
+`src/db/schema/users.ts`) + helper
+`requirePlatformAdmin`/`isPlatformAdmin` (`src/lib/auth/platform-admin.ts`).
+Deliberadamente **no hay ninguna UI para auto-asignarse este rol** (seria
+un agujero de seguridad obvio): el primer administrador de plataforma se
+activa con un `UPDATE users SET is_platform_admin = true WHERE alias =
+'...'` manual contra la base de datos, mismo patron ya usado para ajustar
+`RATE_LIMIT_EXPENSE_CREATION_SECONDS`/limites de auth via `app_config`. No
+se guarda en el JWT de sesion (igual que el rol de grupo): se consulta en
+BD en cada request, para que revocar el permiso surta efecto inmediato.
+
+### Servicio de monedas ampliado (`src/lib/currencies/service.ts`)
+
+- `MAX_ACTIVE_CURRENCIES = 16` (constante, decision de diseno original de
+  Fase 0, nunca antes aplicada en codigo).
+- `createCurrency(actingUserId, input)`: solo administradores de
+  plataforma; se crea activa por defecto; rechaza con 409 si ya se ha
+  alcanzado el limite de 16 activas o si el codigo ya existe
+  (`isUniqueViolation`).
+- `setCurrencyActive(actingUserId, code, isActive)`: activar respeta el
+  mismo limite de 16; desactivar nunca falla por limite (una moneda
+  desactivada no se borra ni afecta a gastos historicos que ya la usan,
+  `expenses.currency_code` sigue siendo una referencia valida — solo deja
+  de ofrecerse para gastos **nuevos**).
+- `listAllCurrencies(actingUserId)`: catalogo completo (activas +
+  inactivas), solo administradores; `listActiveCurrencies()` (sin cambios,
+  usado por el formulario de creacion de gastos) sigue siendo publico para
+  cualquier usuario autenticado.
+- Create/activate/deactivate quedan auditados via el mismo
+  `recordAuditLog` de Fase 5 (`entityType: "currency"`, `entityId` = codigo
+  ISO 4217).
+
+### Cambio de esquema: `audit_logs.entity_id` de `uuid` a `varchar(64)`
+
+La columna `entity_id` de `audit_logs` era `uuid`, pero la PK de
+`currencies` es su codigo ISO 4217 (`varchar(3)`, ej. "EUR"), no un UUID.
+Se cambio el tipo de columna a `varchar(64)` (migracion
+`drizzle/0004_omniscient_emma_frost.sql`, `ALTER COLUMN ... SET DATA TYPE`)
+para poder auditar entidades cuya clave primaria no es un UUID, sin
+acoplar el modelo de auditoria a esa suposicion de cara a fases futuras.
+
+### Rutas API (todas `requireSession`, autorizacion via `requirePlatformAdmin` en el servicio)
+
+- `GET /api/admin/currencies` — catalogo completo.
+- `POST /api/admin/currencies` — crear moneda.
+- `PATCH /api/admin/currencies/[code]` — activar/desactivar.
+- `GET /api/admin/audit-log` — historial de auditoria de entidades sin
+  `groupId` (de momento, solo monedas); `getPlatformAuditLog`
+  (`src/lib/audit/service.ts`), distinto de `getGroupAuditLog` (Fase 5,
+  filtra por `groupId`, restringido a admin de grupo).
+- `GET /api/currencies` (Fase 3, sin cambios): sigue devolviendo solo
+  monedas activas, para el selector del formulario de gastos.
+
+### UI: `/admin/currencies` (solo administradores de plataforma)
+
+- Pagina server component (`src/app/(app)/admin/currencies/page.tsx`):
+  redirige a `/groups` si el usuario no es administrador de plataforma
+  (comprobado en servidor, no solo ocultando el enlace).
+- `AdminCurrenciesClient`: formulario de alta (codigo/nombre/simbolo/
+  decimales) + tabla del catalogo completo con un `Switch` por fila para
+  activar/desactivar, y un badge con el contador `activas / 16` (cambia a
+  variante "warning" al llegar al limite).
+- Enlace "Administracion" visible en `SiteHeader` solo si
+  `session.isPlatformAdmin` (calculado en los layouts/paginas server-side
+  que ya invocan `getSession()`, nunca en el cliente).
+
+### Pendiente / fuera de alcance de esta fase
+
+- No se anadio UI para gestionar el rol de administrador de plataforma en
+  otros usuarios (alta/baja) — es deliberado, ver arriba; se puede anadir
+  una pantalla especifica si se solicita explicitamente, con las mismas
+  cautelas de seguridad.
+- No se implemento borrado de monedas (solo desactivacion) — borrar
+  romperia la integridad referencial con gastos historicos que ya la usan
+  (`expenses.currency_code`); desactivar es la operacion correcta y
+  suficiente para "retirar" una moneda del catalogo activo.
+- Verificado con `tsc --noEmit` (tras limpiar `tsconfig.tsbuildinfo`,
+  cache incremental que no habia detectado la nueva ruta
+  `/admin/currencies` hasta el primer `next build`), `vitest run` (18/18)
+  y `next build`.
+
+## Proximos pasos (Fase 7 — PWA)
+
+- `public/icons/` solo tiene el SVG del favicon (Fase 4-adelanto); falta
+  `manifest.json`, iconos en los tamanos estandar de PWA y configuracion
+  de service worker/instalabilidad en `next.config.ts`.

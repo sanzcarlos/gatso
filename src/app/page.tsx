@@ -1,14 +1,16 @@
 import { getSession } from "@/lib/auth/session";
+import { isPlatformAdmin } from "@/lib/auth/platform-admin";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 export default async function HomePage() {
   const session = await getSession();
+  const isAdmin = session ? await isPlatformAdmin(session.userId) : false;
 
   return (
     <div className="flex min-h-screen flex-col">
-      <SiteHeader session={session} />
+      <SiteHeader session={session ? { ...session, isPlatformAdmin: isAdmin } : null} />
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-start justify-center gap-4 px-4 py-16">
         <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Gatso</h1>
         <p className="max-w-prose text-lg text-muted-foreground">
