@@ -82,8 +82,29 @@ supone ninguna limitacion funcional. Cuando Vercel anada soporte para
 
 El build de Vercel **no ejecuta migraciones automaticamente** (a
 proposito: ejecutarlas en cada build de Preview contra la misma base de
-datos de produccion seria peligroso). Antes del primer despliegue, y cada
-vez que cambie `src/db/schema/`:
+datos de produccion seria peligroso). Hay dos formas de aplicarlas:
+
+**Opcion A — GitHub Actions (recomendada, ver `.github/workflows/db-migrate.yml`)**
+
+El workflow "Database Migrate" aplica `pnpm db:migrate` contra
+produccion. Se dispara:
+
+1. Automaticamente en un push a `main` que modifique `drizzle/**`
+   (evita olvidarse de aplicar una migracion nueva tras el merge).
+2. Manualmente desde GitHub → pestaña **Actions** → "Database Migrate" →
+   **Run workflow**, escribiendo `migrate` en el campo de confirmacion.
+
+Configuracion necesaria (una sola vez):
+
+- Crea un **Environment** llamado `production` en
+  `Settings → Environments` del repositorio (permite anadir revisores
+  obligatorios antes de ejecutar el job, opcional pero recomendado).
+- Anade el secret `DATABASE_URL` en ese environment (o en
+  `Settings → Secrets and variables → Actions` si no usas Environments),
+  con la misma cadena de conexion que usa el proyecto en Vercel para
+  Production.
+
+**Opcion B — Manual, desde tu maquina**
 
 ```bash
 # Con DATABASE_URL apuntando a la base de datos de PRODUCCION
@@ -91,9 +112,18 @@ pnpm db:generate   # si hay cambios de esquema sin migracion generada
 pnpm db:migrate    # aplica las migraciones pendientes
 ```
 
-Ejecutalo localmente (con el `DATABASE_URL` de produccion en `.env.local`
-temporalmente, o exportado en la shell) o desde un paso de CI separado con
-acceso a esa variable — nunca desde el propio `buildCommand` de Vercel.
+Ejecutalo con el `DATABASE_URL` de produccion exportado en la shell (o en
+`.env.local` temporalmente) — nunca desde el propio `buildCommand` de
+Vercel.
+
+### Integracion continua (`.github/workflows/ci.yml`)
+
+En cada push a `main` y en cada Pull Request se ejecutan `pnpm lint`,
+`pnpm typecheck`, `pnpm test` y `pnpm build` en GitHub Actions. El paso de
+build usa un `DATABASE_URL`/`AUTH_SECRET` ficticios (nunca se conecta
+realmente a una base de datos: `src/lib/env.ts` solo valida el formato en
+tiempo de build) para no depender de credenciales reales en un workflow
+que corre en cualquier PR.
 
 ### Modulo nativo `argon2`
 

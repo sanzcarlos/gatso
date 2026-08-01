@@ -1,0 +1,62 @@
+name: Database Migrate
+
+# Ejecuta `drizzle-kit migrate` contra la base de datos de produccion.
+#
+# Deliberadamente NO se dispara en cada push a main: las migraciones son
+# potencialmente destructivas (columnas NOT NULL nuevas, cambios de tipo,
+# etc.) y no deben aplicarse automaticamente sin revision. Se dispara:
+#
+# 1. Manualmente desde la pestana "Actions" de GitHub (workflow_dispatch),
+#    con una confirmacion explicita escribiendo "migrate".
+# 2. Automaticamente en un push a `main` que modifique `drizzle/**`
+#    (nuevas migraciones generadas con `pnpm db:generate`), para no
+#    olvidarse de aplicarlas tras un merge.
+#
+# Requiere el secret DATABASE_URL configurado en
+# Settings -> Secrets and variables -> Actions, apuntando a la base de
+# datos de PRODUCCION (la misma URL que usa el proyecto en Vercel).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "drizzle/**"
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe "migrate" para confirmar que quieres aplicar migraciones contra produccion'
+        required: true
+        type: string
+
+jobs:
+  migrate:
+    name: Apply pending migrations
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Verificar confirmacion manual
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ inputs.confirm }}" != "migrate" ]; then
+            echo "Confirmacion incorrecta. Debes escribir exactamente 'migrate'."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run pending migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

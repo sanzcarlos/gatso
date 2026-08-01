@@ -1,4 +1,22 @@
 import type { NextConfig } from "next";
+import { createRequire } from "node:module";
+import { dirname } from "node:path";
+
+const require = createRequire(import.meta.url);
+
+/**
+ * Resuelve la ruta REAL (no simlinkada) del paquete de argon2 en disco.
+ * pnpm coloca los paquetes en `.pnpm/<pkg>@<version>/node_modules/<pkg>`
+ * y `node_modules/<pkg>` es solo un symlink relativo hacia ahi. Si
+ * `outputFileTracingIncludes` usa un glob que atraviesa ese symlink
+ * (`./node_modules/argon2/...`), Vercel rechaza el paquete de la funcion
+ * serverless con "invalid deployment package ... files in symlinked
+ * directories" (el empaquetador de Vercel descarta cualquier archivo cuyo
+ * directorio padre sea un symlink interno). `require.resolve` sigue el
+ * symlink y devuelve la ruta real dentro de `.pnpm/`, evitando el
+ * problema sin dejar de incluir el binario nativo en el bundle.
+ */
+const argon2PackageDir = dirname(require.resolve("argon2/package.json"));
 
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -26,10 +44,12 @@ const nextConfig: NextConfig = {
   // de salida (@vercel/nft) puede no detectar el binario nativo de argon2
   // al empaquetar cada funcion serverless si se carga de forma dinamica;
   // esto fuerza su inclusion explicita en las rutas que lo usan
-  // (autenticacion: login/registro/recuperacion/aceptar invitacion).
+  // (autenticacion: login/registro/recuperacion/aceptar invitacion). Se
+  // usa la ruta real resuelta arriba (no "./node_modules/argon2/...") para
+  // no atravesar el symlink de pnpm.
   outputFileTracingIncludes: {
-    "/api/auth/**": ["./node_modules/argon2/prebuilds/**/*"],
-    "/api/invitations/**": ["./node_modules/argon2/prebuilds/**/*"],
+    "/api/auth/**": [`${argon2PackageDir}/prebuilds/**/*`],
+    "/api/invitations/**": [`${argon2PackageDir}/prebuilds/**/*`],
   },
   async headers() {
     // Cabeceras de seguridad HTTP basicas (Fase 4), aplicadas a toda la

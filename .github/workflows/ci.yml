@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint, typecheck, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        # Los tests/typecheck no requieren base de datos (son puros), pero
+        # `next build` importa src/lib/env.ts en tiempo de build, que valida
+        # DATABASE_URL/AUTH_SECRET con zod aunque no llegue a conectarse
+        # realmente a la base de datos. Se usan valores ficticios solo para
+        # que el build pase en CI; nunca se usan para conectar a nada real.
+        run: pnpm build
+        env:
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+          AUTH_SECRET: "ci-build-secret-not-used-in-production-0000000000"

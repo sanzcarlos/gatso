@@ -1010,3 +1010,76 @@ escribir esto, no supuesto:
   (EUR, USD), y el `UPDATE` manual documentado en Fase 6 para activar el
   primer administrador de plataforma si se quiere gestionar monedas desde
   produccion.
+
+## GitHub Actions: CI y migraciones (fuera de la numeracion de fases)
+
+Dos workflows nuevos en `.github/workflows/`, solicitados explicitamente
+por el usuario para poder ejecutar `pnpm db:migrate` sin depender de una
+maquina local:
+
+- **`ci.yml`**: en cada push a `main` y cada Pull Request, corre
+  `pnpm lint`, `pnpm typecheck`, `pnpm test` y `pnpm build` sobre
+  `ubuntu-latest` con Node 24 (via `actions/setup-node`) y pnpm (via
+  `pnpm/action-setup`, respeta la version fijada en
+  `packageManager` de `package.json`). El paso de build usa un
+  `DATABASE_URL`/`AUTH_SECRET` ficticios (`postgresql://ci:ci@...`, un
+  secreto de relleno) — verificado localmente que `next build` no llega a
+  conectarse a una base de datos real durante el build (ninguna pagina
+  estatica importa `@/db`), solo `src/lib/env.ts` valida el *formato* con
+  zod en tiempo de carga del modulo; por tanto el workflow no necesita
+  ningun secret real para pasar en cualquier PR externo.
+- **`db-migrate.yml`**: ejecuta `pnpm db:migrate` contra la base de datos
+  de produccion (secret `DATABASE_URL`, entorno de GitHub
+  `production`). Deliberadamente **no** se dispara en cada push a `main`
+  sin condicion (las migraciones pueden ser destructivas): se dispara
+  solo si el push a `main` modifica algo bajo `drizzle/**` (una migracion
+  nueva generada con `pnpm db:generate`), o manualmente via
+  `workflow_dispatch` con un campo de texto que exige escribir literalmente
+  "migrate" como confirmacion (el job falla explicitamente si no coincide).
+  Usa `environment: production` para poder anadir revisores obligatorios
+  desde `Settings → Environments` sin cambiar el workflow.
+- Verificado localmente (simulando el paso de build de CI) que
+  `next build` con esas variables ficticias completa sin error las 21
+  rutas existentes hasta la fecha.
+- Pendiente de accion manual del usuario: crear el Environment
+  `production` en GitHub y anadir el secret `DATABASE_URL` (mismo valor
+  que en Vercel) para que `db-migrate.yml` pueda ejecutarse.
+
+## Bugfix — Vercel rechazaba el despliegue por symlinks (`outputFileTracingIncludes`)
+
+Primer despliegue real en Vercel fallido con: *"The framework produced an
+invalid deployment package for a Serverless Function. Typically this
+means that the framework produces files in symlinked directories."*
+
+**Causa**: el `outputFileTracingIncludes` anadido en la preparacion del
+despliegue (ver seccion anterior) usaba una ruta literal
+`./node_modules/argon2/prebuilds/**/*`. Con pnpm, `node_modules/argon2`
+**no es un directorio real**, es un symlink relativo hacia
+`.pnpm/argon2@<version>/node_modules/argon2`. El glob resultante incluye
+archivos cuyo directorio padre visible es ese symlink; el empaquetador de
+funciones serverless de Vercel descarta (o rechaza el paquete completo)
+cualquier archivo cuyo padre sea un symlink interno, precisamente para
+evitar ZIPs invalidos — de ahi el error.
+
+**Arreglo** (`next.config.ts`): en vez de la ruta literal, se resuelve la
+ubicacion **real** en disco del paquete con
+`dirname(require.resolve("argon2/package.json"))` (usando
+`createRequire(import.meta.url)`, ya que `next.config.ts` se carga como
+ESM). `require.resolve` sigue el symlink y devuelve la ruta ya dentro de
+`.pnpm/`, por lo que el glob generado a partir de esa ruta nunca atraviesa
+un symlink. Se eligio esta solucion (documentada como el fix quirurgico
+recomendado, frente a `nodeLinker: hoisted` en pnpm o eliminar
+`outputFileTracingIncludes` sin mas) porque mantiene el binario nativo de
+`argon2` realmente incluido en el bundle de las rutas de autenticacion,
+en vez de simplemente hacer desaparecer el error a costa de un fallo en
+runtime (`Cannot find module`) al primer login/registro en produccion.
+
+**Verificacion**: inspeccionado manualmente el `*.nft.json` generado por
+`next build` para `/api/auth/login` — los archivos de `argon2`
+(`argon2.cjs`, `package.json`, `prebuilds/**/*.node`, `node-gyp-build`,
+`@phc/format`) aparecen todos referenciados via la ruta real
+`.pnpm/argon2@0.45.1/node_modules/argon2/...`, no via el symlink
+`node_modules/argon2` (que sigue apareciendo una vez, como referencia al
+propio symlink — comportamiento normal y ya soportado por el tracer de
+Next.js, no el patron que causaba el error). Typecheck, `vitest run`
+(18/18) y `next build` verificados de nuevo tras el cambio.
