@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -6,6 +7,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Gatso",
   description: "Control de gastos compartidos entre amigos",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Gatso",
+  },
 };
 
 export const viewport: Viewport = {
@@ -27,6 +33,7 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
           <Toaster richColors closeButton />
+          <ServiceWorkerRegister />
         </ThemeProvider>
       </body>
     </html>

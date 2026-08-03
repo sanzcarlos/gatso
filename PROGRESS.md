@@ -5,8 +5,7 @@
 
 ## Estado actual
 
-**Fase completada: Fase 6 — Gestion de monedas.**
-Pendiente confirmacion del usuario para iniciar Fase 7 (PWA).
+**Fase completada: Fase 7 — PWA.**
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -935,11 +934,107 @@ acoplar el modelo de auditoria a esa suposicion de cara a fases futuras.
   `/admin/currencies` hasta el primer `next build`), `vitest run` (18/18)
   y `next build`.
 
-## Proximos pasos (Fase 7 — PWA)
+## Fase 7 — PWA (completada)
 
-- `public/icons/` solo tiene el SVG del favicon (Fase 4-adelanto); falta
-  `manifest.json`, iconos en los tamanos estandar de PWA y configuracion
-  de service worker/instalabilidad en `next.config.ts`.
+### Iconos generados a partir del SVG existente (sin dependencia nueva en runtime)
+
+Hasta ahora `public/icons/icon.svg` (= `src/app/icon.svg`, favicon via
+convencion de fichero de Next.js) era el unico icono. El manifiesto de una
+PWA instalable necesita PNG en tamanos concretos (Android exige, como
+minimo, 192x192 y 512x512; iOS no soporta SVG para `apple-touch-icon`).
+Se anadio `@resvg/resvg-js` como **devDependency** (binarios prebuilt, sin
+compilacion nativa, mismo criterio que `argon2`/`ws` en fases anteriores;
+verificado contra el registro de npm) y `scripts/generate-pwa-icons.mjs`
+(`pnpm icons:generate`), que rasteriza el SVG fuente a:
+
+- `public/icons/icon-192.png`, `public/icons/icon-512.png` (purpose `any`).
+- `public/icons/icon-maskable-192.png`, `.../icon-maskable-512.png`
+  (purpose `maskable`): el SVG fuente ya tiene el fondo a sangre completa
+  sin margen transparente, por lo que el mismo diseno sirve igual de bien
+  recortado a circulo/squircle en Android sin perder el logo.
+- `src/app/apple-icon.png` (180x180): convencion de fichero de Next.js
+  App Router, anade `<link rel="apple-touch-icon">` automaticamente sin
+  tocar `layout.tsx`.
+
+`@resvg/resvg-js` es solo una herramienta de build-time (genera ficheros
+PNG estaticos versionados en el repo); no se importa desde ningun codigo
+de la aplicacion ni afecta al bundle de produccion.
+
+### Manifiesto web (convencion de fichero `src/app/manifest.ts`)
+
+Verificado contra la documentacion oficial de Next.js (App Router, File
+Conventions): al existir `src/app/manifest.ts` exportando un
+`MetadataRoute.Manifest`, Next.js lo sirve en `/manifest.webmanifest` y
+anade automaticamente `<link rel="manifest">` en el `<head>` de cada
+pagina, sin necesidad de tocar `metadata` en `layout.tsx`. Contenido:
+`name`/`short_name`/`description` en espanol, `display: "standalone"`,
+`start_url`/`scope: "/"`, `background_color`/`theme_color` alineados con
+los ya usados en `viewport.themeColor` (Fase 2.5), `lang: "es"` y el
+array de `icons` (any + maskable) generado en el paso anterior. Tambien
+se anadio `metadata.appleWebApp` (`capable: true`, `title: "Gatso"`) en
+`layout.tsx` para que Safari/iOS trate la app como standalone al
+anadirla a la pantalla de inicio (Next.js expone esta clave de metadata
+como atajo de las meta tags `apple-mobile-web-app-*`, verificado en la
+documentacion oficial de la API `Metadata`).
+
+### Service worker manual (sin `next-pwa`/`serwist`)
+
+No se anadio ningun paquete de terceros para PWA (no estaba entre las
+dependencias del proyecto y estos paquetes suelen anadir un plugin de
+webpack/Turbopack adicional que complica la configuracion ya existente
+de `next.config.ts`, en concreto el manejo a medida de
+`outputFileTracingIncludes` para `argon2` de la fase de despliegue). En
+su lugar, `public/sw.js` es un service worker minimo escrito a mano:
+
+- `install`: precachea un "app shell" pequeno (`/offline`, los dos
+  iconos PNG principales, el manifiesto) en una cache con nombre
+  versionado (`gatso-shell-v1`).
+- `activate`: borra caches de versiones anteriores del propio SW.
+- `fetch`: solo intercepta peticiones `GET` del mismo origen.
+  - Peticiones a `/api/*` se ignoran explicitamente (siempre red, nunca
+    cache): son datos dinamicos y sensibles (sesion, gastos, saldos) que
+    nunca deben servirse obsoletos.
+  - Navegaciones (`request.mode === "navigate"`): red primero; si falla
+    (sin conexion), cae a lo que haya en cache para esa URL o, si no hay
+    nada, a la pagina `/offline`.
+  - Resto de peticiones GET (assets de `_next/static`, con hash
+    inmutable en el nombre): cache-first con relleno de cache en segundo
+    plano (stale-while-revalidate).
+- `src/components/service-worker-register.tsx` (componente cliente sin
+  salida visual, montado en `layout.tsx`) llama a
+  `navigator.serviceWorker.register("/sw.js")` **solo si
+  `NODE_ENV === "production"`**: en `next dev` el codigo se recompila
+  constantemente y un service worker cacheando agresivamente estorbaria
+  al ciclo de desarrollo (recomendacion estandar al implementar SW
+  manuales, documentada tambien por Workbox).
+- `src/app/offline/page.tsx`: pagina estatica minima ("Sin conexion",
+  icono `WifiOff` de `lucide-react`) usada como fallback por el SW.
+- `next.config.ts`: cabecera `Cache-Control: no-cache` anadida
+  especificamente para `/sw.js` (ademas de las cabeceras de seguridad
+  globales de Fase 4), para que el navegador revalide el propio fichero
+  del service worker en cada carga y un despliegue nuevo no tarde en
+  llegar a clientes con la PWA ya instalada.
+
+### Pendiente / fuera de alcance de esta fase
+
+- No se implemento sincronizacion en segundo plano (`Background Sync`)
+  ni cola de peticiones offline (ej. crear un gasto sin conexion y
+  reenviarlo al recuperarla) — el enunciado de la fase pedia
+  instalabilidad + shell offline, no una app "offline-first" completa
+  con escritura diferida; se puede abordar como mejora futura si se
+  pide explicitamente (anadiria complejidad notable: cola persistente,
+  resolucion de conflictos, reintentos).
+- No se anadieron notificaciones push (`Push API`/`Notification API`);
+  las notificaciones in-app ya existentes (Fase 4, `NotificationsBell`)
+  siguen siendo solo dentro de la propia app, no push del sistema.
+- Verificado con `tsc --noEmit`, `vitest run` (18/18) y `next build`
+  (nuevas rutas estaticas `/manifest.webmanifest`, `/apple-icon.png` y
+  `/offline` generadas correctamente). La instalabilidad real
+  (banner "Instalar app" de Chrome/Edge, Lighthouse PWA audit) requiere
+  servir la app sobre HTTPS (localhost cuenta como origen seguro para
+  pruebas) y no se ha podido verificar en un navegador real desde este
+  entorno; pendiente de confirmacion visual por el usuario tras
+  desplegar o correr `pnpm build && pnpm start`.
 
 ## Preparacion para despliegue en Vercel (fuera de la numeracion de fases)
 

@@ -62,6 +62,13 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: securityHeaders,
       },
+      {
+        // El service worker (Fase 7 — PWA) debe revalidarse siempre: si
+        // el navegador lo cacheara agresivamente, un despliegue nuevo
+        // podria tardar mucho en llegar a los clientes ya instalados.
+        source: "/sw.js",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
+      },
     ];
   },
 };
