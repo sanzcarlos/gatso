@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const group = await createGroup(auth.userId, parsed.data.name);
+    const group = await createGroup(auth.userId, parsed.data.name, parsed.data.baseCurrencyCode);
     return NextResponse.json({ group }, { status: 201 });
   } catch (error) {
     return errorResponse(error);

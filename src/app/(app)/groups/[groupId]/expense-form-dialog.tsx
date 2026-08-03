@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { queuePendingExpense } from "@/lib/offline/sync";
+import { AMOUNT_REGEX } from "@/lib/validation/expenses";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -58,6 +59,7 @@ export function ExpenseFormDialog({
   onSaved,
   editExpenseId,
   lockedSubgroupId,
+  groupBaseCurrencyCode,
 }: {
   groupId: string;
   members: Member[];
@@ -67,6 +69,8 @@ export function ExpenseFormDialog({
   editExpenseId?: string;
   /** Si se indica, el gasto queda fijado a este subgrupo y se oculta el selector. */
   lockedSubgroupId?: string;
+  /** Moneda base del grupo (Fase 10): si se indica, se muestra una previsualizacion "≈ X BASECUR" cuando la moneda del gasto es distinta. */
+  groupBaseCurrencyCode?: string | undefined;
 }) {
   const isEditMode = Boolean(editExpenseId);
   const [open, setOpen] = useState(false);
@@ -89,6 +93,7 @@ export function ExpenseFormDialog({
    * no perder su fila del formulario ni romper el selector de pagador.
    */
   const [effectiveMembers, setEffectiveMembers] = useState<Member[]>(members);
+  const [convertedPreview, setConvertedPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -96,6 +101,20 @@ export function ExpenseFormDialog({
       .then((r) => (r.ok ? r.json() : { currencies: [] }))
       .then((data) => setCurrencies(data.currencies ?? []));
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !groupBaseCurrencyCode || currencyCode === groupBaseCurrencyCode || !AMOUNT_REGEX.test(amount.trim())) {
+      setConvertedPreview(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      apiFetch(`/api/groups/${groupId}/expenses/convert-preview?amount=${encodeURIComponent(amount)}&currencyCode=${currencyCode}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => setConvertedPreview(data?.convertedAmount ?? null))
+        .catch(() => setConvertedPreview(null));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [open, amount, currencyCode, groupBaseCurrencyCode, groupId]);
 
   useEffect(() => {
     if (!open || !isEditMode || !editExpenseId) return;
@@ -323,6 +342,11 @@ export function ExpenseFormDialog({
                   placeholder="42.50"
                   required
                 />
+                {convertedPreview ? (
+                  <p className="text-xs text-muted-foreground">
+                    ≈ {convertedPreview} {groupBaseCurrencyCode} (cambio de referencia del BCE)
+                  </p>
+                ) : null}
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="expense-currency">Moneda</Label>

@@ -114,7 +114,9 @@ export async function getSubgroupDetail(groupId: string, subgroupId: string, use
     .innerJoin(users, eq(users.id, subgroupMemberships.userId))
     .where(eq(subgroupMemberships.subgroupId, subgroupId));
 
-  return { subgroup, members };
+  const [group] = await db.select({ baseCurrencyCode: groups.baseCurrencyCode }).from(groups).where(eq(groups.id, groupId)).limit(1);
+
+  return { subgroup, members, groupBaseCurrencyCode: group?.baseCurrencyCode ?? "EUR" };
 }
 
 export async function addSubgroupMember(

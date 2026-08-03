@@ -6,18 +6,21 @@ import { generateInviteCode } from "./invite-code";
 import { addUserToAllGroupSubgroups, removeUserFromAllGroupSubgroups } from "./subgroup-service";
 import { pickAdminReplacement } from "./admin-replacement";
 import { recordAuditLog } from "@/lib/audit/service";
+import { requireActiveCurrency } from "@/lib/currencies/service";
 import { GROUP_MAX_MEMBERS } from "@/lib/validation/groups";
 
 const INVITE_CODE_MAX_ATTEMPTS = 5;
 
-export async function createGroup(userId: string, name: string) {
+export async function createGroup(userId: string, name: string, baseCurrencyCode: string = "EUR") {
+  await requireActiveCurrency(baseCurrencyCode);
+
   return db.transaction(async (tx) => {
     for (let attempt = 0; attempt < INVITE_CODE_MAX_ATTEMPTS; attempt++) {
       const inviteCode = generateInviteCode();
       try {
         const [group] = await tx
           .insert(groups)
-          .values({ name, inviteCode, createdBy: userId, maxMembers: GROUP_MAX_MEMBERS })
+          .values({ name, inviteCode, createdBy: userId, maxMembers: GROUP_MAX_MEMBERS, baseCurrencyCode })
           .returning();
         if (!group) throw new AppError(500, "No se pudo crear el grupo");
         const [membership] = await tx

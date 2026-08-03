@@ -27,6 +27,8 @@ export interface CurrencyExpenseStats {
   totalCents: number;
   paidByMember: MemberAmount[];
   shareByMember: MemberAmount[];
+  /** Fase 10: `totalCents` convertido a la moneda base del grupo (null si el cambio no esta disponible). */
+  convertedTotalCents?: number | null;
 }
 
 const CHART_COLORS = [
@@ -59,14 +61,20 @@ function toAmount(cents: number): string {
  * Graficas de gastos: cuanto ha pagado cada miembro y como se reparte el
  * total entre todos. Se muestra una pareja de graficas por cada moneda
  * presente en el ambito (grupo o subgrupo), ya que sumar importes de
- * monedas distintas sin conversion no tendria sentido.
+ * monedas distintas sin conversion no tendria sentido; cuando hay mas de
+ * una moneda, se anade ademas un total combinado convertido a la moneda
+ * base del grupo (Fase 10, cambio de referencia del BCE).
  */
 export function ExpenseStatsCharts({
   stats,
   loading,
+  baseCurrencyCode,
+  totalConvertedCents,
 }: {
   stats: CurrencyExpenseStats[] | null;
   loading?: boolean;
+  baseCurrencyCode?: string | undefined;
+  totalConvertedCents?: number | null | undefined;
 }) {
   if (loading || stats === null) {
     return (
@@ -83,6 +91,14 @@ export function ExpenseStatsCharts({
 
   return (
     <div className="flex flex-col gap-6">
+      {stats.length > 1 && baseCurrencyCode && totalConvertedCents !== undefined && totalConvertedCents !== null ? (
+        <div className="flex items-center justify-between rounded-md border border-border bg-accent/30 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">Total combinado (convertido a {baseCurrencyCode})</span>
+          <span className="font-semibold text-foreground">
+            {toAmount(totalConvertedCents)} {baseCurrencyCode}
+          </span>
+        </div>
+      ) : null}
       {stats.map((currencyStats) => (
         <div key={currencyStats.currencyCode} className="grid gap-4 sm:grid-cols-2">
           <Card>
@@ -126,6 +142,7 @@ export function ExpenseStatsCharts({
                     nameKey="alias"
                     cx="50%"
                     cy="50%"
+                    innerRadius={40}
                     outerRadius={70}
                     label={(props: unknown) => {
                       const { percent } = props as { percent: number };

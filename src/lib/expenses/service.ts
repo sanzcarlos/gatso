@@ -1,9 +1,10 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { db, expenses, expenseShares, memberships, subgroupMemberships, users, auditLogs } from "@/db";
+import { db, expenses, expenseShares, memberships, subgroupMemberships, users, auditLogs, groups } from "@/db";
 import { AppError } from "@/lib/errors";
 import { requireMembership } from "@/lib/groups/service";
 import { getSubgroupInGroup } from "@/lib/groups/subgroup-service";
 import { requireActiveCurrency } from "@/lib/currencies/service";
+import { convertCents } from "@/lib/exchange-rates/service";
 import { createNotification, resolveExpenseNotifications } from "@/lib/notifications/service";
 import { recordAuditLog } from "@/lib/audit/service";
 import { computeShares } from "./split-strategies";
@@ -145,6 +146,14 @@ export async function createExpense(groupId: string, actingUserId: string, input
  * pagador ya no tiene una fila de membresia en este grupo, es que lo
  * abandono (o fue expulsado) despues de pagar el gasto; el gasto en si
  * nunca se borra ni se modifica por ese motivo, solo se marca en la UI.
+ *
+ * Fase 10: cuando un gasto esta en una moneda distinta de la moneda base
+ * del grupo (`groups.baseCurrencyCode`), se incluye tambien
+ * `convertedAmount`/`groupBaseCurrencyCode` con el importe equivalente
+ * convertido segun el cambio de referencia del BCE
+ * (`src/lib/exchange-rates/service.ts`), para que la UI pueda mostrar
+ * "42.00 USD (~38.50 EUR)" sin que el cliente tenga que hacer la
+ * conversion el mismo.
  */
 export async function listExpenses(groupId: string, userId: string, subgroupId?: string) {
   await requireMembership(groupId, userId);
@@ -152,22 +161,42 @@ export async function listExpenses(groupId: string, userId: string, subgroupId?:
     ? and(eq(expenses.groupId, groupId), eq(expenses.subgroupId, subgroupId))
     : eq(expenses.groupId, groupId);
 
-  const rows = await db
-    .select({
-      expense: expenses,
-      payerAlias: users.alias,
-      payerMembershipId: memberships.id,
-    })
-    .from(expenses)
-    .innerJoin(users, eq(users.id, expenses.payerId))
-    .leftJoin(memberships, and(eq(memberships.groupId, groupId), eq(memberships.userId, expenses.payerId)))
-    .where(conditions)
-    .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
+  const [rows, [group]] = await Promise.all([
+    db
+      .select({
+        expense: expenses,
+        payerAlias: users.alias,
+        payerMembershipId: memberships.id,
+      })
+      .from(expenses)
+      .innerJoin(users, eq(users.id, expenses.payerId))
+      .leftJoin(memberships, and(eq(memberships.groupId, groupId), eq(memberships.userId, expenses.payerId)))
+      .where(conditions)
+      .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt)),
+    db.select({ baseCurrencyCode: groups.baseCurrencyCode }).from(groups).where(eq(groups.id, groupId)).limit(1),
+  ]);
 
-  return rows.map(({ payerMembershipId, ...rest }) => ({
-    ...rest,
-    payerHasLeftGroup: payerMembershipId === null,
-  }));
+  const baseCurrencyCode = group?.baseCurrencyCode ?? "EUR";
+
+  return Promise.all(
+    rows.map(async ({ payerMembershipId, ...rest }) => {
+      let convertedAmount: string | null = null;
+      if (rest.expense.currencyCode !== baseCurrencyCode) {
+        try {
+          const cents = await convertCents(parseAmountToCents(rest.expense.amount), rest.expense.currencyCode, baseCurrencyCode);
+          convertedAmount = centsToAmount(cents);
+        } catch {
+          convertedAmount = null;
+        }
+      }
+      return {
+        ...rest,
+        payerHasLeftGroup: payerMembershipId === null,
+        groupBaseCurrencyCode: baseCurrencyCode,
+        convertedAmount,
+      };
+    }),
+  );
 }
 
 export interface MemberAmount {
@@ -183,6 +212,15 @@ export interface CurrencyExpenseStats {
   totalCents: number;
   paidByMember: MemberAmount[];
   shareByMember: MemberAmount[];
+  /** Fase 10: `totalCents` convertido a la moneda base del grupo (null si el cambio no esta disponible). */
+  convertedTotalCents: number | null;
+}
+
+export interface ExpenseStatsResult {
+  baseCurrencyCode: string;
+  /** Suma de `convertedTotalCents` de todas las monedas (null si falta el cambio de alguna). */
+  totalConvertedCents: number | null;
+  stats: CurrencyExpenseStats[];
 }
 
 /**
@@ -192,21 +230,29 @@ export interface CurrencyExpenseStats {
  * (`shareByMember`). Se separan por moneda porque sumar importes de
  * monedas distintas sin conversion daria una cifra sin sentido.
  */
-export async function getExpenseStats(groupId: string, userId: string, subgroupId?: string) {
+export async function getExpenseStats(
+  groupId: string,
+  userId: string,
+  subgroupId?: string,
+): Promise<ExpenseStatsResult> {
   await requireMembership(groupId, userId);
   const conditions = subgroupId
     ? and(eq(expenses.groupId, groupId), eq(expenses.subgroupId, subgroupId))
     : eq(expenses.groupId, groupId);
 
-  const expenseRows = await db
-    .select({
-      id: expenses.id,
-      payerId: expenses.payerId,
-      amount: expenses.amount,
-      currencyCode: expenses.currencyCode,
-    })
-    .from(expenses)
-    .where(conditions);
+  const [expenseRows, [group]] = await Promise.all([
+    db
+      .select({
+        id: expenses.id,
+        payerId: expenses.payerId,
+        amount: expenses.amount,
+        currencyCode: expenses.currencyCode,
+      })
+      .from(expenses)
+      .where(conditions),
+    db.select({ baseCurrencyCode: groups.baseCurrencyCode }).from(groups).where(eq(groups.id, groupId)).limit(1),
+  ]);
+  const baseCurrencyCode = group?.baseCurrencyCode ?? "EUR";
 
   const expenseIds = expenseRows.map((e) => e.id);
   const shareRows = expenseIds.length
@@ -271,18 +317,32 @@ export async function getExpenseStats(groupId: string, userId: string, subgroupI
       .sort((a, b) => b.totalCents - a.totalCents);
   }
 
-  const stats: CurrencyExpenseStats[] = [...currencyCodes].map((currencyCode) => {
-    const paidByMember = toMemberAmounts(paidTotals.get(currencyCode));
-    const totalCents = paidByMember.reduce((sum, m) => sum + m.totalCents, 0);
-    return {
-      currencyCode,
-      totalCents,
-      paidByMember,
-      shareByMember: toMemberAmounts(shareTotals.get(currencyCode)),
-    };
-  });
+  const stats: CurrencyExpenseStats[] = await Promise.all(
+    [...currencyCodes].map(async (currencyCode) => {
+      const paidByMember = toMemberAmounts(paidTotals.get(currencyCode));
+      const totalCents = paidByMember.reduce((sum, m) => sum + m.totalCents, 0);
+      let convertedTotalCents: number | null = null;
+      try {
+        convertedTotalCents = await convertCents(totalCents, currencyCode, baseCurrencyCode);
+      } catch {
+        convertedTotalCents = null;
+      }
+      return {
+        currencyCode,
+        totalCents,
+        paidByMember,
+        shareByMember: toMemberAmounts(shareTotals.get(currencyCode)),
+        convertedTotalCents,
+      };
+    }),
+  );
 
-  return stats.sort((a, b) => b.totalCents - a.totalCents);
+  const sortedStats = stats.sort((a, b) => b.totalCents - a.totalCents);
+  const totalConvertedCents = sortedStats.some((s) => s.convertedTotalCents === null)
+    ? null
+    : sortedStats.reduce((sum, s) => sum + (s.convertedTotalCents ?? 0), 0);
+
+  return { baseCurrencyCode, totalConvertedCents, stats: sortedStats };
 }
 
 /**

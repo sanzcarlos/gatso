@@ -18,6 +18,7 @@ export const subgroupNameSchema = z
 
 export const createGroupSchema = z.object({
   name: groupNameSchema,
+  baseCurrencyCode: z.string().trim().toUpperCase().length(3, "El codigo de moneda debe tener 3 letras").default("EUR"),
 });
 
 export const updateGroupSchema = z.object({

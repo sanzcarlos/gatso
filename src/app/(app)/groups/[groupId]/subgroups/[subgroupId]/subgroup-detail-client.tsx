@@ -29,6 +29,7 @@ import { SettlementCard, type CurrencySettlement } from "@/components/settlement
 interface SubgroupDetail {
   subgroup: { id: string; name: string; groupId: string };
   members: { userId: string; alias: string }[];
+  groupBaseCurrencyCode?: string;
 }
 
 interface ExpenseRow {
@@ -45,6 +46,8 @@ interface ExpenseRow {
   };
   payerAlias: string;
   payerHasLeftGroup: boolean;
+  groupBaseCurrencyCode?: string;
+  convertedAmount?: string | null;
 }
 
 const SPLIT_METHOD_LABEL: Record<ExpenseRow["expense"]["splitMethod"], string> = {
@@ -83,7 +86,11 @@ export default function SubgroupDetailClient({
   const [detail, setDetail] = useState<SubgroupDetail | null>(null);
   const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
   const [stats, setStats] = useState<CurrencyExpenseStats[] | null>(null);
+  const [statsBaseCurrency, setStatsBaseCurrency] = useState<{ code: string; totalConvertedCents: number | null } | null>(
+    null,
+  );
   const [settlements, setSettlements] = useState<CurrencySettlement[] | null>(null);
+  const [convertedOverall, setConvertedOverall] = useState<CurrencySettlement | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -112,13 +119,15 @@ export default function SubgroupDetailClient({
         await setCache(SUBGROUP_EXPENSES_CACHE_KEY(subgroupId), data);
       }
       if (statsRes.ok) {
-        const data = (await statsRes.json()).stats;
-        setStats(data);
+        const data = await statsRes.json();
+        setStats(data.stats);
+        setStatsBaseCurrency({ code: data.baseCurrencyCode, totalConvertedCents: data.totalConvertedCents });
         await setCache(SUBGROUP_STATS_CACHE_KEY(subgroupId), data);
       }
       if (settlementRes.ok) {
-        const data = (await settlementRes.json()).settlements;
-        setSettlements(data);
+        const data = await settlementRes.json();
+        setSettlements(data.settlements);
+        setConvertedOverall(data.convertedOverall ?? null);
         await setCache(SUBGROUP_SETTLEMENTS_CACHE_KEY(subgroupId), data);
       }
       if (membersRes.ok) {
@@ -134,14 +143,24 @@ export default function SubgroupDetailClient({
       const [cachedDetail, cachedExpenses, cachedStats, cachedSettlements, cachedAdmin] = await Promise.all([
         getCache<SubgroupDetail>(SUBGROUP_DETAIL_CACHE_KEY(subgroupId)),
         getCache<ExpenseRow[]>(SUBGROUP_EXPENSES_CACHE_KEY(subgroupId)),
-        getCache<CurrencyExpenseStats[]>(SUBGROUP_STATS_CACHE_KEY(subgroupId)),
-        getCache<CurrencySettlement[]>(SUBGROUP_SETTLEMENTS_CACHE_KEY(subgroupId)),
+        getCache<{ stats: CurrencyExpenseStats[]; baseCurrencyCode: string; totalConvertedCents: number | null }>(
+          SUBGROUP_STATS_CACHE_KEY(subgroupId),
+        ),
+        getCache<{ settlements: CurrencySettlement[]; convertedOverall: CurrencySettlement | null }>(
+          SUBGROUP_SETTLEMENTS_CACHE_KEY(subgroupId),
+        ),
         getCache<boolean>(SUBGROUP_ADMIN_CACHE_KEY(groupId)),
       ]);
       if (cachedDetail) setDetail(cachedDetail);
       if (cachedExpenses) setExpenses(cachedExpenses);
-      if (cachedStats) setStats(cachedStats);
-      if (cachedSettlements) setSettlements(cachedSettlements);
+      if (cachedStats) {
+        setStats(cachedStats.stats);
+        setStatsBaseCurrency({ code: cachedStats.baseCurrencyCode, totalConvertedCents: cachedStats.totalConvertedCents });
+      }
+      if (cachedSettlements) {
+        setSettlements(cachedSettlements.settlements);
+        setConvertedOverall(cachedSettlements.convertedOverall ?? null);
+      }
       if (cachedAdmin !== null) setIsAdmin(cachedAdmin);
     }
     const pending = await listPendingExpenses(groupId);
@@ -288,11 +307,15 @@ export default function SubgroupDetailClient({
           <CardDescription>Gastos pagados y reparto por miembro dentro de este subgrupo.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ExpenseStatsCharts stats={stats} />
+          <ExpenseStatsCharts
+            stats={stats}
+            baseCurrencyCode={statsBaseCurrency?.code}
+            totalConvertedCents={statsBaseCurrency?.totalConvertedCents}
+          />
         </CardContent>
       </Card>
 
-      <SettlementCard settlements={settlements} />
+      <SettlementCard settlements={settlements} convertedOverall={convertedOverall} />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
@@ -306,6 +329,7 @@ export default function SubgroupDetailClient({
             subgroups={[]}
             onSaved={load}
             lockedSubgroupId={subgroupId}
+            groupBaseCurrencyCode={detail.groupBaseCurrencyCode}
           />
         </CardHeader>
         <CardContent>
@@ -325,7 +349,7 @@ export default function SubgroupDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayExpenses.map(({ expense, payerAlias, payerHasLeftGroup, pendingLocalId }) => {
+                {displayExpenses.map(({ expense, payerAlias, payerHasLeftGroup, pendingLocalId, convertedAmount, groupBaseCurrencyCode }) => {
                   const canEdit = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
                   const canValidate =
                     !pendingLocalId && expense.status === "pending_validation" && expense.createdBy === currentUserId;
@@ -358,6 +382,11 @@ export default function SubgroupDetailClient({
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {expense.amount} {expense.currencyCode}
+                        {convertedAmount ? (
+                          <span className="ml-1 block text-xs font-normal text-muted-foreground">
+                            (~{convertedAmount} {groupBaseCurrencyCode})
+                          </span>
+                        ) : null}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
@@ -379,6 +408,7 @@ export default function SubgroupDetailClient({
                               onSaved={load}
                               editExpenseId={expense.id}
                               lockedSubgroupId={subgroupId}
+                              groupBaseCurrencyCode={detail.groupBaseCurrencyCode}
                             />
                           ) : null}
                           {!pendingLocalId ? <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} /> : null}

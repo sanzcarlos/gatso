@@ -9,3 +9,4 @@ export * from "./app-config";
 export * from "./notifications";
 export * from "./group-invitations";
 export * from "./auth-attempts";
+export * from "./exchange-rates";

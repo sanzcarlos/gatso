@@ -1,7 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { db, expenses, expenseShares, memberships, users } from "@/db";
+import { db, expenses, expenseShares, memberships, users, groups } from "@/db";
 import { requireMembership } from "@/lib/groups/service";
 import { parseAmountToCents } from "@/lib/money";
+import { convertCents } from "@/lib/exchange-rates/service";
 import { minimizeTransactions } from "./optimize";
 import type { Balance } from "./optimize";
 
@@ -41,21 +42,32 @@ export interface CurrencySettlement {
  * calculo (no se borran ni se ignoran), marcados con `hasLeftGroup` para
  * que la UI pueda avisar de que ya no son miembros actuales.
  */
+export interface GroupSettlementResult {
+  baseCurrencyCode: string;
+  settlements: CurrencySettlement[];
+  /** Fase 10: liquidacion combinada, convirtiendo todas las monedas a la moneda base del grupo. Null si solo hay una moneda (seria igual al elemento de `settlements`) o falta algun cambio. */
+  convertedOverall: CurrencySettlement | null;
+}
+
 export async function getGroupSettlement(
   groupId: string,
   userId: string,
   subgroupId?: string,
-): Promise<CurrencySettlement[]> {
+): Promise<GroupSettlementResult> {
   await requireMembership(groupId, userId);
 
   const conditions = subgroupId
     ? and(eq(expenses.groupId, groupId), eq(expenses.subgroupId, subgroupId))
     : eq(expenses.groupId, groupId);
 
-  const expenseRows = await db
-    .select({ id: expenses.id, payerId: expenses.payerId, amount: expenses.amount, currencyCode: expenses.currencyCode })
-    .from(expenses)
-    .where(conditions);
+  const [expenseRows, [group]] = await Promise.all([
+    db
+      .select({ id: expenses.id, payerId: expenses.payerId, amount: expenses.amount, currencyCode: expenses.currencyCode })
+      .from(expenses)
+      .where(conditions),
+    db.select({ baseCurrencyCode: groups.baseCurrencyCode }).from(groups).where(eq(groups.id, groupId)).limit(1),
+  ]);
+  const baseCurrencyCode = group?.baseCurrencyCode ?? "EUR";
 
   const expenseIds = expenseRows.map((e) => e.id);
   const shareRows = expenseIds.length
@@ -136,5 +148,49 @@ export async function getGroupSettlement(
     }
   }
 
-  return settlements.sort((a, b) => a.currencyCode.localeCompare(b.currencyCode));
+  const sortedSettlements = settlements.sort((a, b) => a.currencyCode.localeCompare(b.currencyCode));
+
+  let convertedOverall: CurrencySettlement | null = null;
+  if (netByCurrency.size > 1) {
+    const convertedNetByMember = new Map<string, number>();
+    try {
+      for (const [currencyCode, byMember] of netByCurrency) {
+        for (const [memberId, netCents] of byMember) {
+          const converted = await convertCents(netCents, currencyCode, baseCurrencyCode);
+          convertedNetByMember.set(memberId, (convertedNetByMember.get(memberId) ?? 0) + converted);
+        }
+      }
+
+      const balances: Balance[] = [...convertedNetByMember.entries()]
+        .filter(([, netCents]) => netCents !== 0)
+        .map(([memberId, netCents]) => ({ userId: memberId, netCents }));
+
+      const settlementBalances: SettlementBalance[] = balances
+        .map((b) => ({
+          userId: b.userId,
+          alias: aliasOf(b.userId),
+          netCents: b.netCents,
+          hasLeftGroup: hasLeftGroupFor(b.userId),
+        }))
+        .sort((a, b) => b.netCents - a.netCents);
+
+      const transactions: SettlementTransaction[] = minimizeTransactions(balances).map((t) => ({
+        fromUserId: t.fromUserId,
+        fromAlias: aliasOf(t.fromUserId),
+        fromHasLeftGroup: hasLeftGroupFor(t.fromUserId),
+        toUserId: t.toUserId,
+        toAlias: aliasOf(t.toUserId),
+        toHasLeftGroup: hasLeftGroupFor(t.toUserId),
+        amountCents: t.amountCents,
+      }));
+
+      if (settlementBalances.length > 0) {
+        convertedOverall = { currencyCode: baseCurrencyCode, balances: settlementBalances, transactions };
+      }
+    } catch {
+      convertedOverall = null;
+    }
+  }
+
+  return { baseCurrencyCode, settlements: sortedSettlements, convertedOverall };
 }

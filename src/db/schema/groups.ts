@@ -1,10 +1,16 @@
 import { pgTable, uuid, varchar, smallint, timestamp } from "drizzle-orm/pg-core";
 import { users } from "./users";
+import { currencies } from "./currencies";
 
 /**
  * Grupos de gasto compartido. Limite: 64 personas / 32 subgrupos por grupo
  * (Fase 2). Se guarda el limite en la fila para permitir overrides puntuales
  * sin migracion, aunque el valor por defecto se valida en la capa de servicio.
+ *
+ * `baseCurrencyCode` (Fase 10): moneda de referencia del grupo, usada para
+ * mostrar totales agregados cuando hay gastos en varias monedas (ver
+ * `src/lib/exchange-rates/service.ts` para la conversion usando el cambio
+ * diario del BCE). Por defecto EUR, elegible al crear el grupo.
  */
 export const groups = pgTable("groups", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -12,6 +18,10 @@ export const groups = pgTable("groups", {
   inviteCode: varchar("invite_code", { length: 16 }).notNull().unique(),
   maxMembers: smallint("max_members").notNull().default(64),
   maxSubgroups: smallint("max_subgroups").notNull().default(32),
+  baseCurrencyCode: varchar("base_currency_code", { length: 3 })
+    .notNull()
+    .default("EUR")
+    .references(() => currencies.code),
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),

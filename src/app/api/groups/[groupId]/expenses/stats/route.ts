@@ -17,8 +17,8 @@ export async function GET(request: Request, { params }: RouteParams) {
   const subgroupId = new URL(request.url).searchParams.get("subgroupId") ?? undefined;
 
   try {
-    const stats = await getExpenseStats(groupId, auth.userId, subgroupId);
-    return NextResponse.json({ stats });
+    const result = await getExpenseStats(groupId, auth.userId, subgroupId);
+    return NextResponse.json(result);
   } catch (error) {
     return errorResponse(error);
   }

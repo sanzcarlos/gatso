@@ -11,11 +11,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 
 interface GroupRow {
   group: { id: string; name: string; inviteCode: string };
   role: "admin" | "member";
+}
+
+interface Currency {
+  code: string;
+  name: string;
+  symbol: string;
 }
 
 const GROUPS_CACHE_KEY = "groups-list";
@@ -24,9 +31,18 @@ export default function GroupsClient() {
   const [groups, setGroups] = useState<GroupRow[] | null>(null);
   const [offline, setOffline] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const [baseCurrencyCode, setBaseCurrencyCode] = useState("EUR");
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [inviteCode, setInviteCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/api/currencies")
+      .then((r) => (r.ok ? r.json() : { currencies: [] }))
+      .then((data) => setCurrencies(data.currencies ?? []))
+      .catch(() => setCurrencies([]));
+  }, []);
 
   async function loadGroups() {
     try {
@@ -54,7 +70,7 @@ export default function GroupsClient() {
     try {
       const response = await apiFetch("/api/groups", {
         method: "POST",
-        body: JSON.stringify({ name: newGroupName }),
+        body: JSON.stringify({ name: newGroupName, baseCurrencyCode }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -62,6 +78,7 @@ export default function GroupsClient() {
         return;
       }
       setNewGroupName("");
+      setBaseCurrencyCode("EUR");
       toast.success("Grupo creado");
       await loadGroups();
     } catch {
@@ -117,6 +134,23 @@ export default function GroupsClient() {
                   maxLength={64}
                   required
                 />
+              </div>
+              <div className="mt-4 flex flex-col gap-2">
+                <Label htmlFor="new-group-currency">Moneda base</Label>
+                <Select value={baseCurrencyCode} onValueChange={setBaseCurrencyCode}>
+                  <SelectTrigger id="new-group-currency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(currencies.length > 0 ? currencies : [{ code: "EUR", name: "Euro", symbol: "€" }]).map(
+                      (currency) => (
+                        <SelectItem key={currency.code} value={currency.code}>
+                          {currency.code} ({currency.symbol})
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
             <CardFooter>
