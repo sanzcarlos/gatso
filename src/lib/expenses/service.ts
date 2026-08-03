@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, expenses, expenseShares, memberships, subgroupMemberships, users, auditLogs, groups } from "@/db";
 import { AppError } from "@/lib/errors";
+import { isUniqueViolation } from "@/lib/db/errors";
 import { requireMembership } from "@/lib/groups/service";
 import { getSubgroupInGroup } from "@/lib/groups/subgroup-service";
 import { requireActiveCurrency } from "@/lib/currencies/service";
@@ -74,8 +75,30 @@ async function loadExpenseWithShares(groupId: string, expenseId: string) {
   return { expense, shares };
 }
 
+/**
+ * Busca un gasto ya creado con este `clientRequestId` (Fase 10, cola
+ * offline): un `POST` reenviado tras un fallo de red con el mismo id debe
+ * devolver el gasto ya existente en vez de crear un duplicado. Se busca
+ * solo dentro del grupo indicado, aunque `clientRequestId` ya es unico a
+ * nivel global (generado por `crypto.randomUUID()` en el cliente).
+ */
+async function findExpenseByClientRequestId(groupId: string, clientRequestId: string) {
+  const [expense] = await db
+    .select()
+    .from(expenses)
+    .where(and(eq(expenses.groupId, groupId), eq(expenses.clientRequestId, clientRequestId)))
+    .limit(1);
+  return expense ?? null;
+}
+
 export async function createExpense(groupId: string, actingUserId: string, input: CreateExpenseInput) {
   await requireMembership(groupId, actingUserId);
+
+  if (input.clientRequestId) {
+    const existing = await findExpenseByClientRequestId(groupId, input.clientRequestId);
+    if (existing) return existing;
+  }
+
   await requireActiveCurrency(input.currencyCode);
 
   if (input.subgroupId) {
@@ -92,52 +115,61 @@ export async function createExpense(groupId: string, actingUserId: string, input
 
   const shares = computeShares(totalCents, input.split);
 
-  return db.transaction(async (tx) => {
-    await enforceExpenseCreationRateLimit(tx, actingUserId);
+  try {
+    return await db.transaction(async (tx) => {
+      await enforceExpenseCreationRateLimit(tx, actingUserId);
 
-    const [expense] = await tx
-      .insert(expenses)
-      .values({
+      const [expense] = await tx
+        .insert(expenses)
+        .values({
+          groupId,
+          subgroupId: input.subgroupId ?? null,
+          payerId: input.payerId,
+          amount: centsToAmount(totalCents),
+          currencyCode: input.currencyCode,
+          description: input.description,
+          expenseDate: input.expenseDate,
+          splitMethod: input.split.method,
+          createdBy: actingUserId,
+          clientRequestId: input.clientRequestId ?? null,
+        })
+        .returning();
+      if (!expense) throw new AppError(500, "No se pudo crear el gasto");
+
+      const insertedShares = await tx
+        .insert(expenseShares)
+        .values(
+          shares.map((share) => ({
+            expenseId: expense.id,
+            userId: share.userId,
+            shareAmount: centsToAmount(share.shareAmountCents),
+            sharePercentage:
+              share.sharePercentageBasisPoints !== null
+                ? (share.sharePercentageBasisPoints / 100).toFixed(2)
+                : null,
+          })),
+        )
+        .returning();
+
+      await recordAuditLog(tx, {
+        actorUserId: actingUserId,
+        action: "create",
+        entityType: "expense",
+        entityId: expense.id,
         groupId,
-        subgroupId: input.subgroupId ?? null,
-        payerId: input.payerId,
-        amount: centsToAmount(totalCents),
-        currencyCode: input.currencyCode,
-        description: input.description,
-        expenseDate: input.expenseDate,
-        splitMethod: input.split.method,
-        createdBy: actingUserId,
-      })
-      .returning();
-    if (!expense) throw new AppError(500, "No se pudo crear el gasto");
+        beforeData: null,
+        afterData: { expense, shares: insertedShares },
+      });
 
-    const insertedShares = await tx
-      .insert(expenseShares)
-      .values(
-        shares.map((share) => ({
-          expenseId: expense.id,
-          userId: share.userId,
-          shareAmount: centsToAmount(share.shareAmountCents),
-          sharePercentage:
-            share.sharePercentageBasisPoints !== null
-              ? (share.sharePercentageBasisPoints / 100).toFixed(2)
-              : null,
-        })),
-      )
-      .returning();
-
-    await recordAuditLog(tx, {
-      actorUserId: actingUserId,
-      action: "create",
-      entityType: "expense",
-      entityId: expense.id,
-      groupId,
-      beforeData: null,
-      afterData: { expense, shares: insertedShares },
+      return expense;
     });
-
-    return expense;
-  });
+  } catch (error) {
+    if (input.clientRequestId && isUniqueViolation(error)) {
+      const existing = await findExpenseByClientRequestId(groupId, input.clientRequestId);
+      if (existing) return existing;
+    }
+    throw error;
+  }
 }
 
 /**

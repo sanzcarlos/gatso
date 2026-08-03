@@ -68,7 +68,7 @@ async function syncOne(item: PendingExpense): Promise<"synced" | "failed" | "off
   try {
     const response = await apiFetch(`/api/groups/${item.groupId}/expenses`, {
       method: "POST",
-      body: JSON.stringify(item.payload),
+      body: JSON.stringify({ ...item.payload, clientRequestId: item.localId }),
     });
     if (response.ok) {
       await removePendingExpense(item.localId);

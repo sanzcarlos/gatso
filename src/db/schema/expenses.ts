@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, numeric, date, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, numeric, date, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { groups } from "./groups";
 import { subgroups } from "./subgroups";
 import { users } from "./users";
@@ -26,30 +26,42 @@ export const expenseStatusEnum = pgEnum("expense_status", [
   "pending_validation",
 ]);
 
-export const expenses = pgTable("expenses", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  groupId: uuid("group_id")
-    .notNull()
-    .references(() => groups.id, { onDelete: "cascade" }),
-  subgroupId: uuid("subgroup_id").references(() => subgroups.id, { onDelete: "set null" }),
-  payerId: uuid("payer_id")
-    .notNull()
-    .references(() => users.id),
-  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
-  currencyCode: varchar("currency_code", { length: 3 })
-    .notNull()
-    .references(() => currencies.code),
-  description: varchar("description", { length: 280 }).notNull(),
-  expenseDate: date("expense_date").notNull(),
-  splitMethod: splitMethodEnum("split_method").notNull().default("equal"),
-  createdBy: uuid("created_by")
-    .notNull()
-    .references(() => users.id),
-  status: expenseStatusEnum("status").notNull().default("confirmed"),
-  lastEditedBy: uuid("last_edited_by").references(() => users.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const expenses = pgTable(
+  "expenses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    subgroupId: uuid("subgroup_id").references(() => subgroups.id, { onDelete: "set null" }),
+    payerId: uuid("payer_id")
+      .notNull()
+      .references(() => users.id),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    currencyCode: varchar("currency_code", { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    description: varchar("description", { length: 280 }).notNull(),
+    expenseDate: date("expense_date").notNull(),
+    splitMethod: splitMethodEnum("split_method").notNull().default("equal"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    status: expenseStatusEnum("status").notNull().default("confirmed"),
+    lastEditedBy: uuid("last_edited_by").references(() => users.id),
+    /**
+     * Id generado por el cliente (Fase 10, cola offline) para poder
+     * reenviar `POST /api/groups/:groupId/expenses` de forma idempotente:
+     * un reintento con el mismo `clientRequestId` nunca crea un segundo
+     * gasto duplicado (ver `createExpense`). `NULL` para gastos creados
+     * online (Postgres permite multiples NULL en un indice UNIQUE).
+     */
+    clientRequestId: varchar("client_request_id", { length: 64 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("expenses_client_request_id_idx").on(table.clientRequestId)],
+);
 
 export type Expense = typeof expenses.$inferSelect;
 export type NewExpense = typeof expenses.$inferInsert;

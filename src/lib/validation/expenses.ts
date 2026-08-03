@@ -47,6 +47,12 @@ export const createExpenseSchema = z.object({
   expenseDate: z.iso.date(),
   subgroupId: z.string().uuid().optional(),
   split: splitSchema,
+  /**
+   * Id generado por el cliente (Fase 10, cola offline en
+   * `src/lib/offline/db.ts`) para que reintentar este mismo `POST` tras un
+   * fallo de red no cree un gasto duplicado (ver `createExpense`).
+   */
+  clientRequestId: z.string().uuid().optional(),
 });
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
