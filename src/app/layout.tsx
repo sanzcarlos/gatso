@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { InstallPrompt } from "@/components/install-prompt";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
@@ -34,6 +35,7 @@ export default function RootLayout({
           {children}
           <Toaster richColors closeButton />
           <ServiceWorkerRegister />
+          <InstallPrompt />
         </ThemeProvider>
       </body>
     </html>
