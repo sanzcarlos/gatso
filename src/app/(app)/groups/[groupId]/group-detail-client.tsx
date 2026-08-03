@@ -401,6 +401,7 @@ export default function GroupDetailClient({
         totalConvertedCents={statsBaseCurrency?.totalConvertedCents ?? null}
         participants={(members ?? []).map((member) => ({ userId: member.userId, alias: member.alias, role: member.role }))}
         settlements={settlements}
+        convertedOverall={convertedOverall}
         subgroups={(subgroups ?? []).map((subgroup) => ({
           id: subgroup.id,
           name: subgroup.name,

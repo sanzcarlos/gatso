@@ -349,6 +349,7 @@ export default function SubgroupDetailClient({
         totalConvertedCents={statsBaseCurrency?.totalConvertedCents ?? null}
         participants={members.map((member) => ({ userId: member.userId, alias: member.alias }))}
         settlements={settlements}
+        convertedOverall={convertedOverall}
         subgroups={[]}
         pendingCount={pendingExpenses.length}
         expenseAction={
@@ -372,7 +373,6 @@ export default function SubgroupDetailClient({
           totalConvertedCents={statsBaseCurrency?.totalConvertedCents}
         />
       </CollapsibleCard>
-      </div>
 
       <SettlementCard settlements={settlements} convertedOverall={convertedOverall} />
 
@@ -483,6 +483,7 @@ export default function SubgroupDetailClient({
             </Table>
         )}
       </CollapsibleCard>
+      </div>
     </div>
   );
 }

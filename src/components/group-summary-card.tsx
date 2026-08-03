@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { ChevronLeft, ChevronRight, FolderKanban, ReceiptText, Search, UsersRound, WalletCards } from "lucide-react";
+import { ArrowRightLeft, ChevronLeft, ChevronRight, FolderKanban, ReceiptText, Search, UsersRound, WalletCards } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
-import type { CurrencySettlement } from "@/components/settlement-card";
+import { SettlementCard, type CurrencySettlement } from "@/components/settlement-card";
 
 const PAGE_SIZE = 5;
 
@@ -90,6 +90,7 @@ export function GroupSummaryCard({
   totalConvertedCents,
   participants,
   settlements,
+  convertedOverall,
   subgroups,
   pendingCount = 0,
   expenseAction,
@@ -106,6 +107,7 @@ export function GroupSummaryCard({
   totalConvertedCents?: number | null;
   participants: SummaryParticipant[];
   settlements: CurrencySettlement[] | null;
+  convertedOverall: CurrencySettlement | null;
   subgroups: SummarySubgroup[];
   pendingCount?: number;
   expenseAction?: ReactNode;
@@ -114,7 +116,7 @@ export function GroupSummaryCard({
   renderExpenseActions?: (expense: SummaryExpense) => ReactNode;
   renderParticipantActions?: (participant: SummaryParticipant) => ReactNode;
 }) {
-  const [activeDialog, setActiveDialog] = useState<"total" | "movements" | "participants" | "subgroups" | null>(null);
+  const [activeDialog, setActiveDialog] = useState<"total" | "settlement" | "movements" | "participants" | "subgroups" | null>(null);
   const [query, setQuery] = useState("");
   const [currencyFilter, setCurrencyFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -163,6 +165,10 @@ export function GroupSummaryCard({
             ) : (
               <Badge variant="warning">{pendingPayments === 1 ? "1 pago pendiente" : `${pendingPayments} pagos pendientes`}</Badge>
             )}
+            <Button variant="outline" size="sm" onClick={() => setActiveDialog("settlement")}>
+              <ArrowRightLeft />
+              Liquidacion
+            </Button>
             {expenseAction}
           </div>
         </div>
@@ -222,6 +228,16 @@ export function GroupSummaryCard({
             <DialogDescription>Distribucion de lo pagado y lo repartido en {name}.</DialogDescription>
           </DialogHeader>
           <ExpenseStatsCharts stats={stats} baseCurrencyCode={baseCurrencyCode} totalConvertedCents={totalConvertedCents} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={activeDialog === "settlement"} onOpenChange={(open) => !open && setActiveDialog(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Liquidacion</DialogTitle>
+            <DialogDescription>La forma mas sencilla de saldar las deudas pendientes de {name}.</DialogDescription>
+          </DialogHeader>
+          <SettlementCard settlements={settlements} convertedOverall={convertedOverall} />
         </DialogContent>
       </Dialog>
 
