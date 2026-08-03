@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth/session";
 import { isPlatformAdmin } from "@/lib/auth/platform-admin";
 import { SiteHeader } from "@/components/site-header";
 import { getVersionInfo } from "@/lib/version";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -80,31 +80,6 @@ export default async function VersionPage() {
                 />
               ) : null}
             </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Commit de Git</CardTitle>
-              <CardDescription>
-                {info.commit
-                  ? "Commit exacto que se desplego para generar esta instancia."
-                  : 'No disponible: en desarrollo local, o falta activar "Enable access to System Environment Variables" en la configuracion del proyecto en Vercel.'}
-              </CardDescription>
-            </CardHeader>
-            {info.commit ? (
-              <CardContent className="flex flex-col gap-3 text-sm">
-                <Row
-                  label="SHA"
-                  value={
-                    <Badge variant="outline" className="font-mono text-xs">
-                      {info.commit.shortSha}
-                    </Badge>
-                  }
-                />
-                {info.commit.ref ? <Row label="Rama" value={info.commit.ref} /> : null}
-                {info.commit.message ? <Row label="Mensaje" value={info.commit.message} /> : null}
-              </CardContent>
-            ) : null}
           </Card>
         </div>
       </main>
