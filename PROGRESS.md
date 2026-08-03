@@ -1638,28 +1638,103 @@ tokens ni payloads personales completos de Splitwise.
 
 ## Backlog general priorizado
 
-### Prioridad alta - consistencia y robustez
+### Prioridad alta - consistencia y robustez (implementado)
 
-#### Idempotencia de la sincronizacion offline
+#### Idempotencia de la sincronizacion offline (completado)
 
-La cola genera un `localId`, pero no lo envia al servidor. Si el servidor
-crea el gasto y se pierde la respuesta, un reintento puede duplicarlo.
-Pendiente: anadir un `clientRequestId` al contrato y a la base de datos con
-restriccion unica, devolver el gasto existente en los reintentos y cubrir
-el caso con tests de integracion.
+`clientRequestId` (el mismo `localId` que ya generaba la cola offline,
+`crypto.randomUUID()`) se anade ahora al contrato de creacion de gastos:
 
-#### Pruebas de la Fase 10
+- **Esquema**: `expenses.client_request_id` (`varchar(64)`, nullable) con
+  indice `UNIQUE` (`drizzle/0006_supreme_scarlet_spider.sql`; Postgres
+  permite multiples `NULL` en un indice unico, asi que los gastos creados
+  online sin este campo no se ven afectados).
+- **Validacion**: `createExpenseSchema`
+  (`src/lib/validation/expenses.ts`) anade `clientRequestId:
+  z.string().uuid().optional()`.
+- **Servicio** (`createExpense`, `src/lib/expenses/service.ts`): si el
+  payload trae `clientRequestId`, se comprueba primero si ya existe un
+  gasto con ese id en el grupo (`findExpenseByClientRequestId`) y, si es
+  asi, se devuelve directamente sin repetir validaciones ni insertar de
+  nuevo (camino rapido para el caso normal: reintento tras perder la
+  respuesta de un envio que si tuvo exito). Como defensa adicional frente
+  a una carrera entre dos reintentos simultaneos, si el `INSERT` choca con
+  el indice `UNIQUE` (`isUniqueViolation`, mismo helper ya usado en
+  grupos/monedas/invitaciones) se vuelve a consultar tras el rollback de
+  la transaccion y se devuelve el gasto ya creado por la otra peticion en
+  vez de propagar el error 500.
+- **Cliente** (`src/lib/offline/sync.ts`): `syncOne` ahora envia
+  `{ ...item.payload, clientRequestId: item.localId }`; como `localId` no
+  cambia entre reintentos de un mismo elemento de la cola
+  (`src/lib/offline/db.ts`), todos los reintentos de un mismo gasto
+  offline comparten el mismo `clientRequestId`.
+- Migracion generada con `pnpm db:generate` y aplicada con `pnpm
+  db:migrate` contra la base de datos de `.env.local` en este entorno.
 
-Falta cobertura para parseo/fallback del BCE, conversiones y redondeos,
-IndexedDB, cola offline, reintentos y deduplicacion, service worker,
-estadisticas y liquidaciones multimoneda, previsualizacion y permisos.
+#### Pruebas de la Fase 10 (cobertura anadida, parcial)
 
-#### Actualizacion de tipos del BCE
+Cobertura nueva (todos los tests son puros/mockeados, sin tocar
+`DATABASE_URL` real — imprescindible porque el paso `Test` de
+`ci.yml` ejecuta `pnpm test` sin ninguna variable de entorno, a
+diferencia del paso `Build`):
 
-La frescura se compara con la fecha de publicacion. En fines de semana y
-festivos puede consultarse el BCE repetidamente. Pendiente: guardar el
-ultimo intento o aplicar TTL, evitar descargas concurrentes y distinguir
-mediante observabilidad un fallo del BCE de una moneda sin tasa.
+- `src/lib/exchange-rates/ecb-xml.test.ts`: parseo del XML del BCE (varias
+  monedas, una sola moneda —caso en el que `fast-xml-parser` no devuelve
+  array—, tasas invalidas ignoradas, XML con formato inesperado o sin
+  ninguna tasa valida lanza `AppError`).
+- `src/lib/exchange-rates/freshness.test.ts`: decision de reintento
+  (`shouldAttemptEcbRefresh`), incluyendo el caso de fin de
+  semana/festivo con TTL activo (ver siguiente punto).
+- `src/lib/concurrency/dedupe.test.ts`: `createSingleFlight` (llamadas
+  concurrentes reutilizan la misma ejecucion, tanto en exito como en
+  rechazo; una llamada nueva tras resolverse la anterior dispara una
+  ejecucion nueva).
+- `src/lib/offline/sync.test.ts`: `syncPendingExpenses`/`syncOne` con
+  `@/lib/api/client-fetch` y `./db` mockeados — confirma que el payload
+  reenviado siempre incluye `clientRequestId = localId` (incluso tras un
+  reintento por fallo de red), gestion de aceptado/rechazado/error de red
+  por elemento de la cola, y que los elementos ya `"syncing"` se omiten.
+- Pendiente (fuera de alcance de este cambio, requiere infraestructura de
+  BD de test dedicada — ver "Prioridad alta - pruebas de integracion y
+  E2E" mas abajo): tests de integracion reales contra Postgres para
+  `createExpense`, IndexedDB real (jsdom/fake-indexeddb), service worker,
+  y estadisticas/liquidaciones multimoneda end-to-end.
+
+#### Actualizacion de tipos del BCE (completado)
+
+`src/lib/exchange-rates/service.ts` reescrito para resolver los tres
+puntos pendientes:
+
+- **TTL en vez de solo comparar con "hoy"** (`src/lib/exchange-rates/freshness.ts`,
+  `shouldAttemptEcbRefresh`): el BCE no publica tasas en fin de
+  semana/festivos, asi que comparar unicamente `latestStoredDate` con la
+  fecha actual causaba una peticion al BCE en cada llamada esos dias. Se
+  guarda el resultado de cada intento (exito o error) en `app_config`
+  (clave `ecb_last_fetch_status`, valor JSON `{attemptedAt, status,
+  error?}`, mismo patron key/value que `expense_creation_rate_limit_seconds`
+  de Fase 3) y no se reintenta si el ultimo intento fue hace menos de
+  `ECB_RETRY_INTERVAL_MS` (6h), independientemente de si tuvo exito o no.
+- **Evitar descargas concurrentes**: `createSingleFlight`
+  (`src/lib/concurrency/dedupe.ts`), utilidad generica que memoiza la
+  promesa en curso — si varias peticiones HTTP simultaneas en la misma
+  instancia calida de la funcion serverless disparan `ensureFreshEcbRates`
+  a la vez, solo la primera llega a llamar al BCE; el resto espera esa
+  misma promesa. No es un lock distribuido entre instancias distintas: esa
+  ventana la sigue acotando el TTL anterior y, en ultima instancia, la
+  clave `UNIQUE (currency_code, as_of_date)` ya existente de
+  `exchange_rates` (`onConflictDoUpdate`, idempotente).
+- **Observabilidad: distinguir "BCE caido" de "moneda sin tasa"**: si
+  `getRateToEur` no encuentra ninguna fila para una moneda, ahora consulta
+  el ultimo intento registrado; si fallo, lanza `AppError` con codigo
+  `ecb_unavailable` (el problema es el BCE); si no fallo (o nunca se
+  intento), mantiene el `exchange_rate_unavailable` original (el problema
+  es que esa moneda nunca ha tenido tasa).
+- Parseo del XML extraido a `src/lib/exchange-rates/ecb-xml.ts`
+  (`parseEcbEnvelope`) para poder testearlo sin red ni base de datos.
+- Verificado con `tsc --noEmit`, `vitest run` (53/53, incluye 24 tests
+  nuevos de esta ronda de cambios) y `next build`.
+
+### Backlog aun pendiente (no cubierto en esta ronda)
 
 ### Prioridad alta - pruebas de integracion y E2E
 
