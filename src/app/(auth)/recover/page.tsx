@@ -38,7 +38,7 @@ export default function RecoverPage() {
 
   if (newRecoveryCode) {
     return (
-      <Card>
+      <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Contrasena actualizada</CardTitle>
           <CardDescription>
@@ -61,16 +61,16 @@ export default function RecoverPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Recuperar cuenta</CardTitle>
+    <Card className="shadow-lg">
+      <CardHeader className="pb-5">
+        <CardTitle className="text-2xl">Recuperar cuenta</CardTitle>
         <CardDescription>
           Si has perdido el codigo de recuperacion, no es posible recuperar la cuenta: no se
           recolectan datos de contacto por diseno de privacidad.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
             <Label htmlFor="alias">Alias</Label>
             <Input id="alias" value={alias} onChange={(e) => setAlias(e.target.value)} required />

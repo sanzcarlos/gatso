@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { ArrowUpRight, Crown, Plus, TicketCheck, UsersRound } from "lucide-react";
 
 interface GroupRow {
   group: { id: string; name: string; inviteCode: string };
@@ -112,18 +113,38 @@ export default function GroupsClient() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">Mis grupos</h1>
+    <div className="flex flex-col gap-8">
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Panel principal</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Mis grupos</h1>
+          <p className="mt-2 max-w-xl text-muted-foreground">
+            Crea un espacio para un viaje, una casa o cualquier plan compartido.
+          </p>
+        </div>
+        {groups !== null ? (
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border bg-card/75 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm">
+            <UsersRound className="h-4 w-4 text-primary" />
+            {groups.length === 1 ? "1 grupo activo" : `${groups.length} grupos activos`}
+          </div>
+        ) : null}
+      </header>
 
       {offline ? <OfflineBanner hasCachedData={groups !== null} /> : null}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="overflow-hidden border-primary/20 shadow-md">
           <CardHeader>
-            <CardTitle className="text-base">Crear grupo</CardTitle>
+            <div className="flex items-center gap-3">
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Plus className="h-5 w-5" /></span>
+              <div>
+                <CardTitle>Crear un grupo</CardTitle>
+                <CardDescription className="mt-1">Empieza desde cero y comparte el codigo.</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <form onSubmit={handleCreate}>
-            <CardContent>
+            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="new-group-name">Nombre del grupo</Label>
                 <Input
@@ -135,7 +156,7 @@ export default function GroupsClient() {
                   required
                 />
               </div>
-              <div className="mt-4 flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <Label htmlFor="new-group-currency">Moneda base</Label>
                 <Select value={baseCurrencyCode} onValueChange={setBaseCurrencyCode}>
                   <SelectTrigger id="new-group-currency">
@@ -154,16 +175,22 @@ export default function GroupsClient() {
               </div>
             </CardContent>
             <CardFooter>
-              <Button type="submit" disabled={creating}>
-                {creating ? "Creando..." : "Crear"}
+              <Button type="submit" className="w-full sm:w-auto" disabled={creating}>
+                {creating ? "Creando..." : "Crear grupo"}
               </Button>
             </CardFooter>
           </form>
         </Card>
 
-        <Card>
+        <Card className="overflow-hidden shadow-md">
           <CardHeader>
-            <CardTitle className="text-base">Unirme a un grupo</CardTitle>
+            <div className="flex items-center gap-3">
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-secondary-foreground"><TicketCheck className="h-5 w-5" /></span>
+              <div>
+                <CardTitle>Unirme con un codigo</CardTitle>
+                <CardDescription className="mt-1">Pega la invitacion que te han enviado.</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <form onSubmit={handleJoin}>
             <CardContent>
@@ -174,12 +201,13 @@ export default function GroupsClient() {
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
                   placeholder="ABCD123456"
+                  className="font-mono uppercase tracking-widest"
                   required
                 />
               </div>
             </CardContent>
             <CardFooter>
-              <Button type="submit" variant="secondary" disabled={joining}>
+              <Button type="submit" variant="secondary" className="w-full sm:w-auto" disabled={joining}>
                 {joining ? "Uniendome..." : "Unirme"}
               </Button>
             </CardFooter>
@@ -187,26 +215,43 @@ export default function GroupsClient() {
         </Card>
       </div>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold text-foreground">Grupos</h2>
+      <section className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-foreground">Tus espacios</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Abre un grupo para consultar gastos, balances y actividad.</p>
+          </div>
+        </div>
         {groups === null ? (
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Skeleton className="h-32 w-full rounded-2xl" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
           </div>
         ) : groups.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Todavia no perteneces a ningun grupo.</p>
+          <div className="rounded-2xl border border-dashed border-border bg-card/50 px-6 py-12 text-center">
+            <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-muted text-muted-foreground"><UsersRound className="h-6 w-6" /></span>
+            <h3 className="mt-4 font-semibold text-foreground">Aun no tienes grupos</h3>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">Crea el primero o usa un codigo de invitacion para empezar a compartir gastos.</p>
+          </div>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {groups.map(({ group, role }) => (
               <li key={group.id}>
-                <Link href={`/groups/${group.id}`}>
-                  <Card className="transition-colors hover:bg-accent/50">
-                    <CardContent className="flex items-center justify-between p-4">
-                      <span className="font-medium text-foreground">{group.name}</span>
-                      <Badge variant={role === "admin" ? "default" : "secondary"}>
-                        {role === "admin" ? "Administrador" : "Miembro"}
-                      </Badge>
+                <Link href={`/groups/${group.id}`} className="group block h-full">
+                  <Card className="h-full overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-md">
+                    <CardContent className="flex h-full min-h-36 flex-col justify-between p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 font-bold text-primary">{group.name.slice(0, 1).toUpperCase()}</span>
+                        <ArrowUpRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
+                      </div>
+                      <div className="mt-5">
+                        <span className="line-clamp-1 text-lg font-bold tracking-tight text-foreground">{group.name}</span>
+                        <Badge className="mt-2 gap-1" variant={role === "admin" ? "default" : "secondary"}>
+                          {role === "admin" ? <Crown className="h-3 w-3" /> : null}
+                          {role === "admin" ? "Administrador" : "Miembro"}
+                        </Badge>
+                      </div>
                     </CardContent>
                   </Card>
                 </Link>

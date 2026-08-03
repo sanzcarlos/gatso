@@ -46,7 +46,7 @@ export default function RegisterPage() {
 
   if (recoveryCode) {
     return (
-      <Card>
+      <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Cuenta creada</CardTitle>
           <CardDescription>
@@ -69,13 +69,13 @@ export default function RegisterPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Crear cuenta</CardTitle>
+    <Card className="shadow-lg">
+      <CardHeader className="pb-5">
+        <CardTitle className="text-2xl">Crea tu cuenta</CardTitle>
         <CardDescription>Sin email ni datos personales, solo un alias.</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
             <Label htmlFor="alias">Alias</Label>
             <Input

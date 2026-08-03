@@ -99,27 +99,27 @@ interactivos (AA), **7:1**/**4.5:1** respectivamente para AAA.
 
 | Modo | Combinacion | Fondo | Texto | Ratio | Minimo AA | Resultado |
 |---|---|---|---|---|---|---|
-| Claro | background / foreground | `#ffffff` | `#0f172a` | 17.85:1 | 4.5:1 | **AAA** |
+| Claro | background / foreground | `#f8fafc` | `#0f172a` | 17.06:1 | 4.5:1 | **AAA** |
 | Claro | card / card-foreground | `#ffffff` | `#0f172a` | 17.85:1 | 4.5:1 | **AAA** |
 | Claro | muted / muted-foreground | `#f1f5f9` | `#475569` | 6.92:1 | 4.5:1 | **AA** |
 | Claro | primary / primary-foreground | `#4338ca` | `#ffffff` | 7.90:1 | 4.5:1 | **AAA** |
-| Claro | secondary / secondary-foreground | `#f1f5f9` | `#0f172a` | 16.30:1 | 4.5:1 | **AAA** |
+| Claro | secondary / secondary-foreground | `#eef2ff` | `#0f172a` | 15.97:1 | 4.5:1 | **AAA** |
 | Claro | destructive / destructive-foreground | `#b91c1c` | `#ffffff` | 6.47:1 | 4.5:1 | **AA** |
 | Claro | success / success-foreground | `#15803d` | `#ffffff` | 5.02:1 | 4.5:1 | **AA** |
 | Claro | warning / warning-foreground | `#a16207` | `#ffffff` | 4.92:1 | 4.5:1 | **AA** |
 | Claro | info / info-foreground | `#0369a1` | `#ffffff` | 5.93:1 | 4.5:1 | **AA** |
-| Claro | input/ring (UI) / background | `#64748b` | `#ffffff` | 4.76:1 | 3:1 | **AAA** |
+| Claro | input/ring (UI) / background | `#64748b` | `#f8fafc` | 4.55:1 | 3:1 | **AAA** |
 | Claro | accent / accent-foreground | `#e0e7ff` | `#3730a3` | 8.06:1 | 4.5:1 | **AAA** |
-| Oscuro | background / foreground | `#0b0f14` | `#f1f5f9` | 17.54:1 | 4.5:1 | **AAA** |
-| Oscuro | card / card-foreground | `#111827` | `#f1f5f9` | 16.19:1 | 4.5:1 | **AAA** |
+| Oscuro | background / foreground | `#090d14` | `#f1f5f9` | 17.76:1 | 4.5:1 | **AAA** |
+| Oscuro | card / card-foreground | `#111722` | `#f1f5f9` | 16.39:1 | 4.5:1 | **AAA** |
 | Oscuro | muted / muted-foreground | `#1e293b` | `#94a3b8` | 5.71:1 | 4.5:1 | **AA** |
-| Oscuro | primary / primary-foreground | `#818cf8` | `#0b0f14` | 6.44:1 | 4.5:1 | **AA** |
+| Oscuro | primary / primary-foreground | `#818cf8` | `#090d14` | 6.52:1 | 4.5:1 | **AA** |
 | Oscuro | secondary / secondary-foreground | `#1e293b` | `#f1f5f9` | 13.35:1 | 4.5:1 | **AAA** |
-| Oscuro | destructive / destructive-foreground | `#f87171` | `#0b0f14` | 6.95:1 | 4.5:1 | **AA** |
-| Oscuro | success / success-foreground | `#4ade80` | `#0b0f14` | 11.03:1 | 4.5:1 | **AAA** |
-| Oscuro | warning / warning-foreground | `#fbbf24` | `#0b0f14` | 11.51:1 | 4.5:1 | **AAA** |
-| Oscuro | info / info-foreground | `#38bdf8` | `#0b0f14` | 8.97:1 | 4.5:1 | **AAA** |
-| Oscuro | input/ring (UI) / background | `#64748b` | `#0b0f14` | 4.04:1 | 3:1 | **AA** |
+| Oscuro | destructive / destructive-foreground | `#f87171` | `#090d14` | 7.03:1 | 4.5:1 | **AAA** |
+| Oscuro | success / success-foreground | `#4ade80` | `#090d14` | 11.17:1 | 4.5:1 | **AAA** |
+| Oscuro | warning / warning-foreground | `#fbbf24` | `#090d14` | 11.66:1 | 4.5:1 | **AAA** |
+| Oscuro | info / info-foreground | `#38bdf8` | `#090d14` | 9.08:1 | 4.5:1 | **AAA** |
+| Oscuro | input/ring (UI) / background | `#64748b` | `#090d14` | 4.09:1 | 3:1 | **AA** |
 | Oscuro | accent / accent-foreground | `#312e81` | `#c7d2fe` | 7.66:1 | 4.5:1 | **AAA** |
 
 **Resultado**: las 22 combinaciones cumplen AA; 14 de ellas alcanzan AAA.

@@ -38,13 +38,13 @@ export default function LoginPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Iniciar sesion</CardTitle>
+    <Card className="shadow-lg">
+      <CardHeader className="pb-5">
+        <CardTitle className="text-2xl">Bienvenido de nuevo</CardTitle>
         <CardDescription>Introduce tu alias y contrasena.</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
             <Label htmlFor="alias">Alias</Label>
             <Input id="alias" value={alias} onChange={(e) => setAlias(e.target.value)} required />

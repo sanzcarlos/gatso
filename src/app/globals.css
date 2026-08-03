@@ -20,12 +20,12 @@
 
 :root {
   /* Radios de borde */
-  --radius: 0.625rem;
+  --radius: 0.875rem;
 
   /* Colores base — modo claro. Ratios de contraste verificados con
      scripts/check-contrast.mjs (formula WCAG 2.1 oficial); ver tabla
      completa en design-system.md. */
-  --background: #ffffff;
+  --background: #f8fafc;
   --foreground: #0f172a;
 
   --card: #ffffff;
@@ -38,7 +38,7 @@
   --primary-hover: #3730a3;
   --primary-foreground: #ffffff;
 
-  --secondary: #f1f5f9;
+  --secondary: #eef2ff;
   --secondary-foreground: #0f172a;
 
   --muted: #f1f5f9;
@@ -62,7 +62,7 @@
 
   /* `border`: divisorias decorativas de baja intensidad (no sujetas al
      requisito WCAG 1.4.11 de 3:1, por ser puramente cosmeticas). */
-  --border: #e2e8f0;
+  --border: #dfe5ee;
   /* `input` / `ring`: limites de componentes interactivos (inputs, foco).
      Estas SI deben cumplir >=3:1 contra el fondo — verificado. */
   --input: #64748b;
@@ -72,10 +72,10 @@
 }
 
 .dark {
-  --background: #0b0f14;
+  --background: #090d14;
   --foreground: #f1f5f9;
 
-  --card: #111827;
+  --card: #111722;
   --card-foreground: #f1f5f9;
 
   --popover: #111827;
@@ -107,7 +107,7 @@
   --info: #38bdf8;
   --info-foreground: #0b0f14;
 
-  --border: #1e293b;
+  --border: #263244;
   --input: #64748b;
   --ring: #818cf8;
 
@@ -158,12 +158,13 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
 
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
-  --shadow-sm: 0 1px 2px 0 rgb(var(--shadow-color) / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(var(--shadow-color) / 0.1), 0 2px 4px -2px rgb(var(--shadow-color) / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(var(--shadow-color) / 0.1), 0 4px 6px -4px rgb(var(--shadow-color) / 0.1);
+  --shadow-sm: 0 1px 2px 0 rgb(var(--shadow-color) / 0.04), 0 1px 3px 0 rgb(var(--shadow-color) / 0.04);
+  --shadow-md: 0 10px 30px -16px rgb(var(--shadow-color) / 0.2), 0 4px 10px -6px rgb(var(--shadow-color) / 0.1);
+  --shadow-lg: 0 24px 60px -24px rgb(var(--shadow-color) / 0.3), 0 10px 24px -16px rgb(var(--shadow-color) / 0.16);
 }
 
 @layer base {
@@ -176,6 +177,17 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+    background-image:
+      radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--primary) 10%, transparent) 0, transparent 28rem),
+      radial-gradient(circle at 92% 15%, color-mix(in srgb, var(--info) 7%, transparent) 0, transparent 24rem);
+    background-attachment: fixed;
+    min-width: 320px;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+    color: var(--foreground);
   }
 
   /* Foco visible consistente y accesible por teclado en todos los

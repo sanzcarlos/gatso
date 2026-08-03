@@ -1424,3 +1424,284 @@ verdad (ver limitaciones abajo).
 - Verificado con `tsc --noEmit`, `vitest run` (29/29, incluye los 8 tests
   nuevos de `src/lib/settlements/optimize.test.ts`) y `next build` (nueva
   ruta `/api/groups/[groupId]/settlement` generada correctamente).
+
+## Fase 10 - Multimoneda y funcionamiento offline (implementacion avanzada, pendiente de endurecimiento)
+
+Esta fase amplia la PWA de Fase 7 con conversion a una moneda base por
+grupo y soporte offline para consultar datos ya visitados y crear gastos
+sin conexion. La funcionalidad principal esta implementada, aunque aun
+requiere las pruebas y medidas de robustez del backlog posterior.
+
+### Implementado
+
+- `groups.base_currency_code` permite elegir la moneda de referencia al
+  crear un grupo (EUR por defecto).
+- `exchange_rates` guarda los cambios diarios del Banco Central Europeo.
+  `src/lib/exchange-rates/service.ts` descarga y parsea el XML, almacena
+  las tasas conocidas y usa la ultima disponible si el BCE falla.
+- Gastos, estadisticas y liquidaciones muestran valores convertidos. El
+  endpoint `GET /api/groups/[groupId]/expenses/convert-preview` ofrece una
+  previsualizacion antes de guardar.
+- `src/lib/offline/db.ts` mantiene en IndexedDB una cache de lectura y una
+  cola persistente de gastos creados sin conexion.
+- Las pantallas recuperan los ultimos datos disponibles cuando falla la
+  red y avisan mediante `OfflineBanner` de que pueden estar desactualizados.
+- Los gastos offline aparecen como filas locales pendientes, se pueden
+  descartar y se reenvian mediante `OfflineSyncManager` al recuperar red.
+- `public/sw.js` conserva paginas visitadas y recursos estaticos. Las
+  peticiones `/api/*` no se cachean en el service worker; su respaldo vive
+  en IndexedDB.
+
+Esto supera el pendiente historico de Fase 7 sobre cola de peticiones y
+escritura diferida. No se usa la API nativa `Background Sync`: el reenvio
+se activa al arrancar la app o recibir el evento `online`.
+
+### Validacion tecnica actual
+
+- `pnpm test`: 4 ficheros, 29 tests, todos correctos.
+- `pnpm typecheck`: correcto.
+- `pnpm build`: correcto; genera 25 paginas y todas las rutas API.
+- Los tests solo cubren logica pura de dinero, repartos, sustitucion de
+  administrador y optimizacion de liquidaciones. No hay cobertura
+  automatizada especifica de esta fase.
+
+## Fase 11 - Importacion desde Splitwise mediante API (pendiente)
+
+Objetivo: permitir que un usuario migre a Gatso sus grupos, participantes,
+gastos, repartos y pagos historicos de Splitwise sin introducirlos a mano.
+La importacion sera unidireccional (Splitwise -> Gatso), explicita,
+reanudable e idempotente; inicialmente no se plantea una sincronizacion
+bidireccional continua.
+
+La API oficial de Splitwise v3 ofrece autenticacion OAuth y los recursos
+necesarios: `get_current_user`, `get_groups`, `get_group/{id}` y
+`get_expenses`. Este ultimo admite `group_id`, filtros `dated_*` y
+`updated_*`, y paginacion mediante `limit`/`offset` (20 por defecto). Los
+gastos incluyen coste, moneda, fecha, cantidades pagadas y debidas por
+usuario, pagos y estado de borrado.
+
+Documentacion oficial: `https://dev.splitwise.com/`.
+
+### Alcance de la primera version
+
+- Conectar una cuenta Splitwise mediante OAuth.
+- Seleccionar uno o varios grupos accesibles para el usuario conectado.
+- Mostrar una vista previa antes de escribir en Gatso.
+- Crear un grupo nuevo o importar en uno existente administrado por el
+  usuario.
+- Mapear participantes Splitwise con usuarios Gatso.
+- Importar gastos y repartos conservando exactamente los balances por
+  moneda.
+- Ejecutar la migracion como trabajo persistente con progreso, reintentos,
+  cancelacion cooperativa e informe final.
+- Poder repetir o reanudar la importacion sin crear duplicados.
+
+Quedan fuera de la primera version la sincronizacion bidireccional, la
+escritura en Splitwise y la importacion silenciosa en segundo plano sin una
+confirmacion previa del usuario.
+
+### OAuth y proteccion de credenciales
+
+- Registrar Gatso como aplicacion OAuth en Splitwise y configurar callbacks
+  separados para desarrollo, Preview y Production.
+- Anadir `SPLITWISE_CLIENT_ID`, `SPLITWISE_CLIENT_SECRET` y una clave de
+  cifrado especifica a las variables de entorno.
+- Implementar `state` aleatorio, de un solo uso, expiracion corta y
+  vinculacion a la sesion Gatso que inicio la conexion.
+- Solicitar solo lectura cuando la configuracion de Splitwise lo permita.
+  Gatso no modificara ni eliminara datos del origen.
+- Cifrar tokens en reposo, no enviarlos al navegador ni escribirlos en logs,
+  y permitir desconectar/revocar la integracion.
+- Para una migracion puntual, eliminar el token al terminar por defecto; el
+  usuario debe aceptar expresamente conservarlo para futuras importaciones
+  incrementales.
+
+### Modelo de datos propuesto
+
+- `external_connections`: propietario Gatso, proveedor (`splitwise`), token
+  cifrado, estado, expiracion y fechas de creacion/ultimo uso.
+- `import_jobs`: usuario, proveedor, estado (`draft`, `preview`, `running`,
+  `completed`, `partial`, `failed`, `cancelled`), progreso, contadores,
+  cursor, errores resumidos y marcas temporales.
+- `external_entity_mappings`: proveedor, tipo (`group`, `user`, `expense`,
+  `payment`), ID externo, ID Gatso, version/hash externo y fecha de ultima
+  importacion. Una restriccion unica debe impedir duplicar una entidad.
+- `import_job_errors`: errores por entidad, recuperables y descargables sin
+  almacenar payloads personales completos.
+
+Credenciales, emails, nombres reales y otros datos personales recibidos de
+Splitwise no se incorporaran al log de auditoria. Solo se guardaran los IDs
+externos opacos, decisiones de mapeo y resultados imprescindibles. Esto
+mantiene el principio de privacidad por diseno de Gatso.
+
+### Flujo de usuario
+
+1. El usuario abre "Importar desde Splitwise" y conecta su cuenta por OAuth.
+2. Gatso consulta el usuario actual y sus grupos; el usuario elige cuales
+   quiere migrar.
+3. Se genera una vista previa con participantes, rango de fechas, monedas,
+   numero de gastos/pagos y datos que no puedan representarse directamente.
+4. Para cada origen se elige crear grupo o importar en uno existente. La
+   segunda opcion exige rol de administrador.
+5. Gatso propone el mapeo de participantes, pero ningun emparejamiento por
+   nombre o email se confirma automaticamente: debe revisarse para evitar
+   fusionar personas distintas.
+6. Los participantes sin cuenta Gatso se modelaran como identidades externas
+   invitables o mediante la solucion que se defina antes de implementar. No
+   se crearan cuentas con contrasenas ficticias.
+7. El usuario revisa la reconciliacion previa y confirma el job. La UI
+   muestra progreso y termina con importados, actualizados, omitidos y
+   fallidos.
+
+### Mapeo financiero
+
+- Conservar nombre del grupo, moneda, descripcion, fecha efectiva y
+  participantes. La moneda base se propone desde la predominante/preferida,
+  pero debe confirmarse.
+- Convertir `paid_share` y `owed_share` a centimos enteros sin usar coma
+  flotante para los calculos finales.
+- Splitwise admite varios pagadores por gasto y Gatso tiene actualmente un
+  unico `payerId`. Antes de importar debe elegirse entre ampliar Gatso a
+  multiples pagadores (opcion preferida) o descomponer el gasto en registros
+  enlazados que conserven exactamente los saldos.
+- Traducir a `equal`, `percentage` o `fixed` cuando el reparto encaje
+  exactamente. Los casos restantes se guardaran como importes fijos por
+  usuario para no perder centimos.
+- Los pagos/liquidaciones de Splitwise solo se importaran cuando exista la
+  entidad de pagos descrita en el backlog. No se convertiran en gastos
+  normales porque cambiaria su significado.
+- Definir tratamiento explicito para gastos borrados, comentarios,
+  categorias, recibos, recurrencia y gastos fuera de grupo. Los datos no
+  soportados apareceran en vista previa e informe; nunca se descartaran en
+  silencio.
+- Conservar las fechas externas disponibles y marcar los registros como
+  importados, sin atribuir su creacion manual al usuario que ejecuto el job.
+
+### Paginacion, incrementalidad e idempotencia
+
+- Leer `get_expenses` por paginas hasta recibir menos elementos que el
+  limite; persistir `offset` y progreso para poder reanudar.
+- Usar `updated_after` para posteriores importaciones incrementales, pero
+  mantener el ID externo como clave principal de deduplicacion.
+- Procesar lotes en transacciones pequenas: un fallo no debe revertir grupos
+  completados ni dejar un gasto sin todas sus participaciones.
+- Tratar `401`, `403`, `404`, `429` y `5xx` con reautenticacion cuando
+  corresponda, backoff exponencial, jitter y reintentos acotados.
+- No asumir que HTTP 200 implica exito cuando la respuesta incluya errores.
+- Ejecutar en servidor/cola con estado persistente; no depender de que el
+  navegador permanezca abierto.
+- Una repeticion completa actualizara u omitira entidades mapeadas y nunca
+  creara duplicados.
+
+### API y UI propuestas
+
+- Inicio OAuth y callback exclusivamente servidor para Splitwise.
+- `GET /api/imports/splitwise/groups`: seleccion del origen.
+- `POST /api/imports/splitwise/preview`: validacion y plan sin escritura
+  financiera.
+- `POST /api/imports/splitwise/jobs`: confirmacion y creacion del trabajo.
+- `GET /api/imports/[jobId]`: progreso e informe.
+- `POST /api/imports/[jobId]/cancel` y `/retry`: control seguro.
+- Pantalla `/settings/import/splitwise`, accesible solo al propietario de la
+  conexion.
+
+Todas las mutaciones usaran `requireSession`, CSRF, Zod, rate limiting
+especifico y comprobacion de propiedad/rol. Ninguna respuesta devolvera
+tokens ni payloads personales completos de Splitwise.
+
+### Reconciliacion, auditoria y rollback
+
+- Antes de confirmar, comparar balances de origen y destino por moneda y
+  participante.
+- Tras importar, recalcular y no marcar `completed` si existe una diferencia
+  distinta de cero. El informe indicara grupo, moneda y participante.
+- Ofrecer dry-run repetible e informe JSON/CSV de reconciliacion, omisiones y
+  errores.
+- Auditar conexion/desconexion, inicio, cancelacion, resultado y mapeos sin
+  tokens, emails ni nombres reales procedentes de Splitwise.
+- Definir rollback por job: eliminar solo entidades creadas por ese job y
+  solo si no fueron modificadas despues en Gatso. Debe ser idempotente y
+  auditado.
+
+### Pruebas y criterio de finalizacion
+
+- Tests unitarios con fixtures anonimizados: paginacion, decimales, varias
+  monedas/pagadores, pagos, borrados y respuestas incompletas.
+- Tests de contrato del cliente HTTP: OAuth revocado/expirado, `429`, timeout,
+  reintentos y errores incluidos en respuestas 200.
+- Integracion: deduplicacion, reanudacion, rollback, permisos y
+  reconciliacion exacta.
+- E2E: conectar, previsualizar, mapear, importar, revisar informe y repetir.
+- La fase solo se considerara completada si una segunda ejecucion crea cero
+  duplicados y todos los balances por moneda coinciden exactamente con
+  Splitwise.
+
+## Backlog general priorizado
+
+### Prioridad alta - consistencia y robustez
+
+#### Idempotencia de la sincronizacion offline
+
+La cola genera un `localId`, pero no lo envia al servidor. Si el servidor
+crea el gasto y se pierde la respuesta, un reintento puede duplicarlo.
+Pendiente: anadir un `clientRequestId` al contrato y a la base de datos con
+restriccion unica, devolver el gasto existente en los reintentos y cubrir
+el caso con tests de integracion.
+
+#### Pruebas de la Fase 10
+
+Falta cobertura para parseo/fallback del BCE, conversiones y redondeos,
+IndexedDB, cola offline, reintentos y deduplicacion, service worker,
+estadisticas y liquidaciones multimoneda, previsualizacion y permisos.
+
+#### Actualizacion de tipos del BCE
+
+La frescura se compara con la fecha de publicacion. En fines de semana y
+festivos puede consultarse el BCE repetidamente. Pendiente: guardar el
+ultimo intento o aplicar TTL, evitar descargas concurrentes y distinguir
+mediante observabilidad un fallo del BCE de una moneda sin tasa.
+
+### Prioridad alta - pruebas de integracion y E2E
+
+Faltan pruebas con base de datos y navegador para autenticacion, sesiones,
+CSRF, rate limiting, permisos, grupos/subgrupos, invitaciones, abandono,
+gastos, auditoria inmutable, monedas, notificaciones y PWA/offline. Se
+recomienda Postgres aislado para integracion y una suite E2E contra un build
+de produccion.
+
+### Prioridad media - escalabilidad y operacion
+
+- Anadir paginacion por cursor a gastos y notificaciones; paginacion y
+  filtros por accion/entidad al visor de auditoria (ahora limitado a 100).
+- Definir retencion y limpieza para `auth_attempts`, notificaciones leidas,
+  tipos de cambio antiguos y caches locales, sin borrar auditoria ni datos
+  financieros necesarios.
+- Evaluar rate limiting para registro, creacion/aceptacion de invitaciones y
+  union a grupos, evitando canales de enumeracion.
+
+### Funcionalidad de producto pendiente
+
+- Registrar pagos reales e historial ("marcar como pagado"). Requiere una
+  entidad de pagos, permisos, auditoria, idempotencia y recalculo de saldos.
+- Implementar notificaciones push con Push/Notification API, suscripciones
+  por dispositivo y contenido que no revele informacion sensible.
+- Anadir a la UI el abandono independiente de un subgrupo, conservando
+  gastos y deudas historicas.
+- Definir la politica para grupos con cero miembros: archivado, invalidacion
+  del codigo, eliminacion diferida o recuperacion administrativa.
+- Crear una UI segura y auditada para conceder/revocar administradores de
+  plataforma, impidiendo retirar al ultimo administrador.
+- Revisar la politica de contrasenas (comunes/comprometidas, longitud maxima
+  y orientacion) sin reglas de composicion arbitrarias.
+
+### Verificacion manual y produccion
+
+- Probar en HTTPS y dispositivos reales instalacion Android/iOS,
+  actualizacion del service worker, recarga offline, fallback, IndexedDB y
+  sincronizacion tras cerrar/reabrir la app o reiniciar el dispositivo.
+- Verificar degradacion cuando IndexedDB no esta disponible, alcanza cuota o
+  el navegador elimina datos locales.
+- Conectar Vercel; separar secretos de Preview/Production; proteger el
+  Environment `production` de GitHub; aplicar migraciones y seed; designar
+  el primer administrador de plataforma; verificar health, Argon2, region
+  de funciones y conectividad real con Neon.
