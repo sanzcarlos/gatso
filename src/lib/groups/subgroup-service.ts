@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { db, groups, subgroups, subgroupMemberships, users } from "@/db";
 import type { Tx } from "@/db";
 import { AppError } from "@/lib/errors";
@@ -23,6 +23,27 @@ export async function addUserToAllGroupSubgroups(tx: Tx, groupId: string, userId
     .insert(subgroupMemberships)
     .values(groupSubgroups.map((subgroup) => ({ subgroupId: subgroup.id, userId })))
     .onConflictDoNothing();
+}
+
+/**
+ * Elimina a un usuario de todos los subgrupos de un grupo (Fase 8): se usa
+ * cuando el usuario abandona el grupo o es expulsado, ya que la
+ * pertenencia a un subgrupo no tiene sentido sin la pertenencia al grupo
+ * que lo contiene. Recibe `tx` para ejecutarse dentro de la misma
+ * transaccion que elimina la membresia de grupo.
+ */
+export async function removeUserFromAllGroupSubgroups(tx: Tx, groupId: string, userId: string) {
+  const groupSubgroups = await tx.select({ id: subgroups.id }).from(subgroups).where(eq(subgroups.groupId, groupId));
+  if (groupSubgroups.length === 0) return;
+
+  await tx
+    .delete(subgroupMemberships)
+    .where(
+      and(
+        inArray(subgroupMemberships.subgroupId, groupSubgroups.map((s) => s.id)),
+        eq(subgroupMemberships.userId, userId),
+      ),
+    );
 }
 
 export async function createSubgroup(groupId: string, userId: string, name: string) {

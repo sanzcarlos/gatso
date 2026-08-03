@@ -3,7 +3,8 @@ import { db, groups, memberships, subgroups, users } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { generateInviteCode } from "./invite-code";
-import { addUserToAllGroupSubgroups } from "./subgroup-service";
+import { addUserToAllGroupSubgroups, removeUserFromAllGroupSubgroups } from "./subgroup-service";
+import { pickAdminReplacement } from "./admin-replacement";
 import { recordAuditLog } from "@/lib/audit/service";
 import { GROUP_MAX_MEMBERS } from "@/lib/validation/groups";
 
@@ -207,6 +208,8 @@ export async function removeMember(groupId: string, actingUserId: string, target
     );
   }
   return db.transaction(async (tx) => {
+    await removeUserFromAllGroupSubgroups(tx, groupId, targetUserId);
+
     const deleted = await tx
       .delete(memberships)
       .where(and(eq(memberships.groupId, groupId), eq(memberships.userId, targetUserId)))
@@ -225,6 +228,85 @@ export async function removeMember(groupId: string, actingUserId: string, target
         beforeData: removed,
       });
     }
+    return removed;
+  });
+}
+
+/**
+ * Un usuario abandona un grupo voluntariamente (Fase 8), a diferencia de
+ * `removeMember` (expulsion por un administrador, no permite
+ * autoeliminarse). Los gastos ya existentes del usuario (como pagador,
+ * creador o participante de un reparto) NO se borran ni se modifican: solo
+ * dejan de existir en `memberships`, por lo que las consultas de gastos
+ * (`src/lib/expenses/service.ts`) detectan la ausencia de esa fila para
+ * mostrar al usuario con la indicacion de "ha abandonado el grupo" en vez
+ * de ocultarlo o borrar su historial.
+ *
+ * Si quien abandona es el unico administrador del grupo y quedan otros
+ * miembros, se asciende automaticamente al miembro mas antiguo restante
+ * (`pickAdminReplacement`) para que el grupo nunca quede sin
+ * administrador mientras tenga miembros. Si es el ultimo miembro del
+ * grupo, el grupo queda vacio (no se borra): conserva su historial de
+ * gastos y auditoria, y cualquiera que se una despues con el codigo de
+ * invitacion pasa a ser el unico miembro (sin rol admin automatico, misma
+ * limitacion que hoy tiene `joinGroupByInviteCode`; se puede revisar si
+ * se pide explicitamente).
+ */
+export async function leaveGroup(groupId: string, userId: string) {
+  const membership = await requireMembership(groupId, userId);
+
+  return db.transaction(async (tx) => {
+    const allMembers = await tx
+      .select()
+      .from(memberships)
+      .where(eq(memberships.groupId, groupId))
+      .for("update");
+
+    const otherMembers = allMembers.filter((m) => m.userId !== userId);
+
+    if (membership.role === "admin" && otherMembers.length > 0) {
+      const remainingAdmins = otherMembers.filter((m) => m.role === "admin");
+      if (remainingAdmins.length === 0) {
+        const promoted = pickAdminReplacement(otherMembers);
+        if (promoted) {
+          const [updatedMembership] = await tx
+            .update(memberships)
+            .set({ role: "admin" })
+            .where(eq(memberships.id, promoted.id))
+            .returning();
+          if (updatedMembership) {
+            await recordAuditLog(tx, {
+              actorUserId: userId,
+              action: "update",
+              entityType: "membership",
+              entityId: updatedMembership.id,
+              groupId,
+              beforeData: promoted,
+              afterData: updatedMembership,
+            });
+          }
+        }
+      }
+    }
+
+    await removeUserFromAllGroupSubgroups(tx, groupId, userId);
+
+    const deleted = await tx
+      .delete(memberships)
+      .where(and(eq(memberships.groupId, groupId), eq(memberships.userId, userId)))
+      .returning();
+    const removed = deleted[0];
+    if (!removed) throw new AppError(404, "El usuario no es miembro de este grupo", "member_not_found");
+
+    await recordAuditLog(tx, {
+      actorUserId: userId,
+      action: "delete",
+      entityType: "membership",
+      entityId: removed.id,
+      groupId,
+      beforeData: { ...removed, leftVoluntarily: true },
+    });
+
     return removed;
   });
 }

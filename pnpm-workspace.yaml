@@ -4,3 +4,27 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+
+# typescript-eslint (y sus paquetes @typescript-eslint/*) todavia no
+# soportan TypeScript 7 (compilador nativo, sin la Compiler API clasica
+# que usa typescript-estree): https://github.com/typescript-eslint/typescript-eslint/issues/10940
+# El propio blog de anuncio de TS 7 (devblogs.microsoft.com/typescript/
+# announcing-typescript-7-0) recomienda exactamente este patron: dejar
+# `typescript` en su version real (7.0.2, usada por `tsc`/`next build`
+# via `useTypeScriptCli`) y solo redirigir, edge a edge del grafo de
+# dependencias, la copia de `typescript` que consume la cadena de
+# typescript-eslint hacia el paquete de compatibilidad oficial
+# `@typescript/typescript6` (re-exporta la API clasica de TS 6). En pnpm
+# 11.x los overrides deben ir aqui (pnpm-workspace.yaml), no en
+# package.json (ignorado silenciosamente desde pnpm 11).
+overrides:
+  "typescript-eslint>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "@typescript-eslint/eslint-plugin>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "@typescript-eslint/parser>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "@typescript-eslint/project-service>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "@typescript-eslint/tsconfig-utils>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "@typescript-eslint/type-utils>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "@typescript-eslint/typescript-estree>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "@typescript-eslint/utils>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "ts-api-utils>typescript": "npm:@typescript/typescript6@^6.0.2"
+  "eslint-import-resolver-typescript>typescript": "npm:@typescript/typescript6@^6.0.2"

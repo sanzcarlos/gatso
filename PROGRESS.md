@@ -5,7 +5,7 @@
 
 ## Estado actual
 
-**Fase completada: Fase 7 — PWA.**
+**Fase completada: Fase 8 — Abandonar grupo.**
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -1178,3 +1178,120 @@ runtime (`Cannot find module`) al primer login/registro en produccion.
 propio symlink — comportamiento normal y ya soportado por el tracer de
 Next.js, no el patron que causaba el error). Typecheck, `vitest run`
 (18/18) y `next build` verificados de nuevo tras el cambio.
+
+## Fase 8 — Abandonar grupo (completada)
+
+### Requisito y decision central: los gastos de quien abandona NUNCA se borran ni se ocultan
+
+Pedido explicito del usuario: un miembro debe poder abandonar un grupo por
+su cuenta, pero sus gastos (como pagador, creador o participante de un
+reparto) deben seguir apareciendo tal cual al listar/crear/editar gastos,
+marcados con un indicativo de que ha abandonado el grupo.
+
+Esto ya era estructuralmente posible sin tocar el esquema: `expenses`
+(`payerId`, `createdBy`) y `expense_shares` (`userId`) referencian
+`users.id` directamente, nunca `memberships.id`; abandonar un grupo solo
+borra la fila de `memberships` (y de `subgroup_memberships`), por lo que
+ningun `ON DELETE CASCADE` afecta a los gastos. El "indicativo de que ha
+abandonado el grupo" que pide el usuario se calcula, por tanto, en tiempo
+de consulta: **la ausencia de una fila en `memberships` para
+`(groupId, userId)` es la señal de "ha abandonado"**, sin necesidad de una
+columna nueva ni de un estado a mantener sincronizado.
+
+### Servicio: `leaveGroup` (`src/lib/groups/service.ts`)
+
+Distinto de `removeMember` (Fase 2, expulsion por un administrador, que
+explicitamente prohibe autoeliminarse): `leaveGroup(groupId, userId)`
+permite la autoeliminacion voluntaria. Dentro de una transaccion, con las
+filas de `memberships` del grupo bloqueadas (`.for("update")`, mismo
+patron de concurrencia que `joinGroupByInviteCode`/`createSubgroup` desde
+la Fase 2):
+
+- Si quien abandona es el **unico administrador** y quedan otros
+  miembros: asciende automaticamente al miembro restante con mas
+  antiguedad (`pickAdminReplacement`, funcion pura extraida a
+  `src/lib/groups/admin-replacement.ts` para poder testearla con Vitest
+  sin necesidad de `DATABASE_URL`, siguiendo el mismo criterio ya usado en
+  el repo para `money.ts`/`split-strategies.ts`). Garantiza que un grupo
+  con miembros nunca se quede sin administrador.
+- Si es el **ultimo miembro** del grupo: se permite abandonar igualmente;
+  el grupo queda sin miembros pero **no se borra** (conserva su historial
+  de gastos y auditoria intacto). Decision documentada como limite
+  conocido: si alguien se une despues con el codigo de invitacion a un
+  grupo vacio, entra como `member` (no se le asigna admin
+  automaticamente); se puede revisar si se pide explicitamente.
+- Elimina al usuario de todos los subgrupos del grupo
+  (`removeUserFromAllGroupSubgroups`, nueva funcion mirror de
+  `addUserToAllGroupSubgroups` en `src/lib/groups/subgroup-service.ts`):
+  la pertenencia a un subgrupo no tiene sentido sin la pertenencia al
+  grupo que lo contiene. **Bugfix de paso**: `removeMember` (expulsion por
+  admin) tenia el mismo hueco desde la Fase 2 — nunca limpiaba
+  `subgroup_memberships` al expulsar a alguien; se corrigio a la vez
+  reutilizando la misma funcion.
+- Registra en `audit_logs` (Fase 5) la baja de membresia con un flag
+  `leftVoluntarily: true` en `beforeData` (mismo `entityType: "membership"`
+  y `action: "delete"` que usa `removeMember`, para no anadir un tipo de
+  entidad nuevo solo para distinguir el matiz) y, si hubo ascenso de
+  administrador, una segunda entrada `action: "update"` con el antes/despues
+  de esa membresia.
+
+Nueva ruta `POST /api/groups/[groupId]/leave` (`requireSession`, mismo
+patron que el resto de rutas de grupo).
+
+### `src/lib/expenses/service.ts`: mostrar y seguir editando gastos de quien ya no es miembro
+
+- `listExpenses`, `getExpenseDetail` y `getExpenseStats` hacen ahora un
+  `LEFT JOIN`/consulta adicional contra `memberships` para calcular
+  `payerHasLeftGroup` / `hasLeftGroup` (por reparto) / `hasLeftGroup` (por
+  miembro en las estadisticas): `true` cuando no existe fila de membresia
+  actual para ese usuario en el grupo. No se borra ni se reescribe ningun
+  dato del gasto, solo se anade el indicativo calculado.
+- `assertParticipantsBelongToScope` gana un parametro
+  `grandfatheredUserIds`: al **editar** un gasto (`updateExpense`), el
+  pagador y los participantes que YA estaban en ese gasto antes de la
+  edicion quedan exentos de la comprobacion de membresia actual (se
+  calculan a partir del `payerId`/`shares` cargados antes de aplicar los
+  cambios). Sin esto, `updateExpense` habria roto el guardado de cualquier
+  gasto en cuanto uno de sus participantes abandonara el grupo, ya que la
+  validacion original exigia membresia vigente de *todos* los
+  participantes del payload, viejos y nuevos. Los participantes
+  **nuevos** anadidos en la edicion siguen exigiendo ser miembros
+  actuales (no se puede anadir a alguien que ya no esta en el grupo).
+  `createExpense` no cambia: un gasto nuevo solo puede repartirse entre
+  miembros actuales.
+
+### UI
+
+- `ExpenseFormDialog` (`src/app/(app)/groups/[groupId]/expense-form-dialog.tsx`):
+  en modo edicion, combina la lista de miembros actuales (`members`, prop)
+  con cualquier pagador/participante del gasto cargado que ya no este en
+  esa lista (`effectiveMembers`, marcados `hasLeftGroup: true`), para que
+  el selector de pagador y las filas de reparto sigan mostrando a quien
+  abandono el grupo (con el texto "(ha abandonado el grupo)") en vez de
+  hacerlo desaparecer silenciosamente del formulario o dejar el selector
+  en blanco.
+- Tablas de gastos (`group-detail-client.tsx` y
+  `subgroups/[subgroupId]/subgroup-detail-client.tsx`): badge "Ha
+  abandonado el grupo" junto al alias del pagador cuando
+  `payerHasLeftGroup` es `true`.
+- Boton "Abandonar grupo" en la cabecera de `group-detail-client.tsx`
+  (visible para cualquier miembro, incluido el admin — la logica de
+  ascenso automatico en el servicio cubre ese caso), con confirmacion
+  (`window.confirm`) y redireccion a `/groups` tras abandonar.
+- `GroupAuditLogCard`: `describeEntry` distingue ahora "abandono el
+  grupo" (borrado de membresia con `leftVoluntarily: true`) de "elimino
+  miembro del grupo" (expulsion por un admin), y anade el caso de ascenso
+  automatico a administrador.
+
+### Pendiente / fuera de alcance de esta fase
+
+- No se anadio UI para "abandonar subgrupo" de forma independiente (el
+  servicio `removeSubgroupMember` ya soportaba autoeliminacion desde una
+  fase anterior, pero sin botones en `subgroup-detail-client.tsx`); no
+  formaba parte de lo pedido explicitamente en esta fase.
+- Un grupo que queda con 0 miembros no se borra automaticamente ni se
+  archiva; sigue existiendo con su codigo de invitacion activo. Se puede
+  anadir una politica de limpieza si se pide explicitamente.
+- Verificado con `tsc --noEmit`, `vitest run` (21/21, incluye los 3 tests
+  nuevos de `pickAdminReplacement`) y `next build` (nueva ruta
+  `/api/groups/[groupId]/leave` generada correctamente).

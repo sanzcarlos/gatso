@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ interface ExpenseRow {
     status: "confirmed" | "modified" | "pending_validation";
   };
   payerAlias: string;
+  payerHasLeftGroup: boolean;
 }
 
 const SPLIT_METHOD_LABEL: Record<ExpenseRow["expense"]["splitMethod"], string> = {
@@ -82,6 +84,7 @@ export default function GroupDetailClient({
   groupId: string;
   currentUserId: string;
 }) {
+  const router = useRouter();
   const [detail, setDetail] = useState<GroupDetail | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [subgroups, setSubgroups] = useState<Subgroup[] | null>(null);
@@ -89,6 +92,7 @@ export default function GroupDetailClient({
   const [stats, setStats] = useState<CurrencyExpenseStats[] | null>(null);
   const [newSubgroupName, setNewSubgroupName] = useState("");
   const [creatingSubgroup, setCreatingSubgroup] = useState(false);
+  const [leavingGroup, setLeavingGroup] = useState(false);
 
   const isAdmin = members?.find((m) => m.userId === currentUserId)?.role === "admin";
 
@@ -143,6 +147,25 @@ export default function GroupDetailClient({
     await load();
   }
 
+  async function handleLeaveGroup() {
+    if (!window.confirm("¿Seguro que quieres abandonar este grupo? Tus gastos ya registrados no se borraran.")) {
+      return;
+    }
+    setLeavingGroup(true);
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/leave`, { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo abandonar el grupo");
+        return;
+      }
+      toast.success("Has abandonado el grupo");
+      router.push("/groups");
+    } finally {
+      setLeavingGroup(false);
+    }
+  }
+
   async function handleDeleteExpense(expenseId: string) {
     const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}`, { method: "DELETE" });
     if (!response.ok) {
@@ -179,9 +202,14 @@ export default function GroupDetailClient({
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{detail.group.name}</h1>
-        <Badge variant="outline" className="font-mono text-sm">
-          {detail.group.inviteCode}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="font-mono text-sm">
+            {detail.group.inviteCode}
+          </Badge>
+          <Button variant="outline" size="sm" onClick={handleLeaveGroup} disabled={leavingGroup}>
+            {leavingGroup ? "Abandonando..." : "Abandonar grupo"}
+          </Button>
+        </div>
       </div>
 
       <p className="text-sm text-muted-foreground">
@@ -233,7 +261,7 @@ export default function GroupDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {expenses.map(({ expense, payerAlias }) => {
+                {expenses.map(({ expense, payerAlias, payerHasLeftGroup }) => {
                   const canEdit = isAdmin || expense.createdBy === currentUserId;
                   const canDelete = isAdmin || expense.createdBy === currentUserId;
                   const canValidate = expense.status === "pending_validation" && expense.createdBy === currentUserId;
@@ -248,6 +276,11 @@ export default function GroupDetailClient({
                         >
                           {payerAlias}
                         </Link>
+                        {payerHasLeftGroup ? (
+                          <Badge variant="outline" className="ml-2">
+                            Ha abandonado el grupo
+                          </Badge>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">{SPLIT_METHOD_LABEL[expense.splitMethod]}</Badge>

@@ -40,6 +40,7 @@ interface ExpenseRow {
     status: "confirmed" | "modified" | "pending_validation";
   };
   payerAlias: string;
+  payerHasLeftGroup: boolean;
 }
 
 const SPLIT_METHOD_LABEL: Record<ExpenseRow["expense"]["splitMethod"], string> = {
@@ -221,7 +222,7 @@ export default function SubgroupDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {expenses.map(({ expense, payerAlias }) => {
+                {expenses.map(({ expense, payerAlias, payerHasLeftGroup }) => {
                   const canEdit = isAdmin || expense.createdBy === currentUserId;
                   const canValidate = expense.status === "pending_validation" && expense.createdBy === currentUserId;
                   return (
@@ -235,6 +236,11 @@ export default function SubgroupDetailClient({
                         >
                           {payerAlias}
                         </Link>
+                        {payerHasLeftGroup ? (
+                          <Badge variant="outline" className="ml-2">
+                            Ha abandonado el grupo
+                          </Badge>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">{SPLIT_METHOD_LABEL[expense.splitMethod]}</Badge>

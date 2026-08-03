@@ -14,8 +14,8 @@ interface AuditEntry {
   actorUserId: string;
   actorAlias: string;
   createdAt: string;
-  beforeData: { description?: string; name?: string } | null;
-  afterData: { description?: string; name?: string; validated?: boolean } | null;
+  beforeData: { description?: string; name?: string; leftVoluntarily?: boolean } | null;
+  afterData: { description?: string; name?: string; validated?: boolean; role?: string } | null;
 }
 
 const ACTION_LABEL: Record<AuditEntry["action"], string> = {
@@ -38,6 +38,12 @@ function describeEntry(entry: AuditEntry): string {
 
   if (entry.entityType === "expense" && entry.action === "update" && entry.afterData?.validated) {
     return `valido cambios pendientes en el gasto${label ? ` "${label}"` : ""}`;
+  }
+  if (entry.entityType === "membership" && entry.action === "delete" && entry.beforeData?.leftVoluntarily) {
+    return "abandono el grupo";
+  }
+  if (entry.entityType === "membership" && entry.action === "update" && entry.afterData?.role === "admin") {
+    return "fue ascendido a administrador del grupo (el anterior administrador abandono el grupo)";
   }
   if (entry.action === "create") return `anadio ${entityLabel}${label ? ` "${label}"` : ""}`;
   if (entry.action === "delete") return `elimino ${entityLabel}${label ? ` "${label}"` : ""}`;

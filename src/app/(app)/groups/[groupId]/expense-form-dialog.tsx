@@ -28,6 +28,8 @@ import { Plus, Pencil } from "lucide-react";
 interface Member {
   userId: string;
   alias: string;
+  /** Fase 8: true si ya no es miembro actual del grupo (dato historico). */
+  hasLeftGroup?: boolean;
 }
 
 interface Currency {
@@ -79,6 +81,13 @@ export function ExpenseFormDialog({
   const [subgroupId, setSubgroupId] = useState<string>(lockedSubgroupId ?? "none");
   const [method, setMethod] = useState<SplitMethod>("equal");
   const [rows, setRows] = useState<Record<string, ParticipantRow>>({});
+  /**
+   * Fase 8: al editar, puede incluir participantes/pagador que ya
+   * abandonaron el grupo (grandfathered en `updateExpense`); `members`
+   * (prop) solo trae miembros actuales, asi que se amplia localmente para
+   * no perder su fila del formulario ni romper el selector de pagador.
+   */
+  const [effectiveMembers, setEffectiveMembers] = useState<Member[]>(members);
 
   useEffect(() => {
     if (!open) return;
@@ -107,7 +116,14 @@ export function ExpenseFormDialog({
           subgroupId: string | null;
           splitMethod: SplitMethod;
         };
-        const shares = data.shares as { userId: string; shareAmount: string; sharePercentage: string | null }[];
+        const payerAlias = data.payerAlias as string;
+        const shares = data.shares as {
+          userId: string;
+          alias: string;
+          shareAmount: string;
+          sharePercentage: string | null;
+          hasLeftGroup: boolean;
+        }[];
 
         setAmount(expense.amount);
         setCurrencyCode(expense.currencyCode);
@@ -117,8 +133,23 @@ export function ExpenseFormDialog({
         setSubgroupId(lockedSubgroupId ?? expense.subgroupId ?? "none");
         setMethod(expense.splitMethod);
 
+        const knownUserIds = new Set(members.map((m) => m.userId));
+        const formerMembers: Member[] = [];
+        if (!knownUserIds.has(expense.payerId)) {
+          formerMembers.push({ userId: expense.payerId, alias: payerAlias, hasLeftGroup: true });
+          knownUserIds.add(expense.payerId);
+        }
+        for (const share of shares) {
+          if (!knownUserIds.has(share.userId)) {
+            formerMembers.push({ userId: share.userId, alias: share.alias, hasLeftGroup: true });
+            knownUserIds.add(share.userId);
+          }
+        }
+        const allMembers = [...members, ...formerMembers];
+        setEffectiveMembers(allMembers);
+
         const nextRows: Record<string, ParticipantRow> = {};
-        for (const member of members) {
+        for (const member of allMembers) {
           const share = shares.find((s) => s.userId === member.userId);
           nextRows[member.userId] = share
             ? {
@@ -135,6 +166,7 @@ export function ExpenseFormDialog({
 
   useEffect(() => {
     if (isEditMode) return;
+    setEffectiveMembers(members);
     setRows((prev) => {
       const next: Record<string, ParticipantRow> = {};
       for (const member of members) {
@@ -316,9 +348,10 @@ export function ExpenseFormDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {members.map((member) => (
+                    {effectiveMembers.map((member) => (
                       <SelectItem key={member.userId} value={member.userId}>
                         {member.alias}
+                        {member.hasLeftGroup ? " (ha abandonado el grupo)" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -363,7 +396,7 @@ export function ExpenseFormDialog({
               <p className="text-xs font-medium text-muted-foreground">
                 Participantes {method !== "equal" ? `(deben sumar ${method === "percentage" ? "100%" : "el importe total"})` : `(${totalIncluded} seleccionados)`}
               </p>
-              {members.map((member) => {
+              {effectiveMembers.map((member) => {
                 const row = rows[member.userId] ?? { included: true, value: "" };
                 return (
                   <div key={member.userId} className="flex items-center gap-3">
@@ -372,7 +405,12 @@ export function ExpenseFormDialog({
                       onCheckedChange={() => toggleIncluded(member.userId)}
                       aria-label={`Incluir a ${member.alias}`}
                     />
-                    <span className="flex-1 text-sm text-foreground">{member.alias}</span>
+                    <span className="flex-1 text-sm text-foreground">
+                      {member.alias}
+                      {member.hasLeftGroup ? (
+                        <span className="ml-2 text-xs text-muted-foreground">(ha abandonado el grupo)</span>
+                      ) : null}
+                    </span>
                     {method !== "equal" && row.included ? (
                       <Input
                         className="w-24"

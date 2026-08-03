@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { db, expenses, expenseShares, subgroupMemberships, users, auditLogs } from "@/db";
+import { db, expenses, expenseShares, memberships, subgroupMemberships, users, auditLogs } from "@/db";
 import { AppError } from "@/lib/errors";
 import { requireMembership } from "@/lib/groups/service";
 import { getSubgroupInGroup } from "@/lib/groups/subgroup-service";
@@ -15,13 +15,24 @@ import type { CreateExpenseInput } from "@/lib/validation/expenses";
  * Verifica que todos los userId referenciados en el reparto (y el pagador)
  * sean miembros del grupo (y, si aplica, del subgrupo). Evita que alguien
  * cree un gasto repartido con usuarios ajenos al grupo.
+ *
+ * `grandfatheredUserIds` (Fase 8) exime de esta comprobacion a usuarios
+ * que ya formaban parte del gasto ANTES de la edicion actual (pagador o
+ * participante de un reparto ya existente): si un usuario abandono el
+ * grupo despues de participar en un gasto, `updateExpense` debe poder
+ * seguir guardando ese gasto sin verse obligado a expulsarlo del reparto
+ * historico. Los participantes nuevos anadidos durante la edicion (no
+ * grandfathered) siguen exigiendo membresia real, igual que en la
+ * creacion.
  */
 async function assertParticipantsBelongToScope(
   groupId: string,
   subgroupId: string | undefined,
   userIds: string[],
+  grandfatheredUserIds: ReadonlySet<string> = new Set(),
 ) {
   for (const userId of new Set(userIds)) {
+    if (grandfatheredUserIds.has(userId)) continue;
     await requireMembership(groupId, userId).catch(() => {
       throw new AppError(400, "Todos los participantes deben ser miembros del grupo", "participant_not_in_group");
     });
@@ -34,6 +45,7 @@ async function assertParticipantsBelongToScope(
     .where(eq(subgroupMemberships.subgroupId, subgroupId));
   const subgroupUserIds = new Set(members.map((m) => m.userId));
   for (const userId of new Set(userIds)) {
+    if (grandfatheredUserIds.has(userId)) continue;
     if (!subgroupUserIds.has(userId)) {
       throw new AppError(
         400,
@@ -127,27 +139,43 @@ export async function createExpense(groupId: string, actingUserId: string, input
   });
 }
 
+/**
+ * Lista los gastos de un grupo (o de un subgrupo si se indica). Incluye
+ * `payerHasLeftGroup` (Fase 8, `LEFT JOIN` contra `memberships`): si el
+ * pagador ya no tiene una fila de membresia en este grupo, es que lo
+ * abandono (o fue expulsado) despues de pagar el gasto; el gasto en si
+ * nunca se borra ni se modifica por ese motivo, solo se marca en la UI.
+ */
 export async function listExpenses(groupId: string, userId: string, subgroupId?: string) {
   await requireMembership(groupId, userId);
   const conditions = subgroupId
     ? and(eq(expenses.groupId, groupId), eq(expenses.subgroupId, subgroupId))
     : eq(expenses.groupId, groupId);
 
-  return db
+  const rows = await db
     .select({
       expense: expenses,
       payerAlias: users.alias,
+      payerMembershipId: memberships.id,
     })
     .from(expenses)
     .innerJoin(users, eq(users.id, expenses.payerId))
+    .leftJoin(memberships, and(eq(memberships.groupId, groupId), eq(memberships.userId, expenses.payerId)))
     .where(conditions)
     .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
+
+  return rows.map(({ payerMembershipId, ...rest }) => ({
+    ...rest,
+    payerHasLeftGroup: payerMembershipId === null,
+  }));
 }
 
 export interface MemberAmount {
   userId: string;
   alias: string;
   totalCents: number;
+  /** Fase 8: true si el usuario ya no es miembro actual del grupo. */
+  hasLeftGroup: boolean;
 }
 
 export interface CurrencyExpenseStats {
@@ -205,6 +233,12 @@ export async function getExpenseStats(groupId: string, userId: string, subgroupI
     : [];
   const aliasByUserId = new Map(aliasRows.map((u) => [u.id, u.alias]));
 
+  const currentMembers = await db
+    .select({ userId: memberships.userId })
+    .from(memberships)
+    .where(eq(memberships.groupId, groupId));
+  const currentMemberIds = new Set(currentMembers.map((m) => m.userId));
+
   const paidTotals = new Map<string, Map<string, number>>();
   const shareTotals = new Map<string, Map<string, number>>();
 
@@ -232,6 +266,7 @@ export async function getExpenseStats(groupId: string, userId: string, subgroupI
         userId: memberId,
         alias: aliasByUserId.get(memberId) ?? "Usuario",
         totalCents,
+        hasLeftGroup: !currentMemberIds.has(memberId),
       }))
       .sort((a, b) => b.totalCents - a.totalCents);
   }
@@ -250,28 +285,48 @@ export async function getExpenseStats(groupId: string, userId: string, subgroupI
   return stats.sort((a, b) => b.totalCents - a.totalCents);
 }
 
+/**
+ * Detalle de un gasto (Fase 8: incluye `payerHasLeftGroup` y, por cada
+ * reparto, `hasLeftGroup`, ambos via `LEFT JOIN` contra `memberships` de
+ * este grupo) para que la UI de edicion pueda seguir mostrando a un
+ * pagador/participante que ya abandono el grupo, en vez de ocultarlo o
+ * romper el formulario.
+ */
 export async function getExpenseDetail(groupId: string, expenseId: string, userId: string) {
   await requireMembership(groupId, userId);
 
-  const [expense] = await db
-    .select()
+  const [row] = await db
+    .select({
+      expense: expenses,
+      payerAlias: users.alias,
+      payerMembershipId: memberships.id,
+    })
     .from(expenses)
+    .innerJoin(users, eq(users.id, expenses.payerId))
+    .leftJoin(memberships, and(eq(memberships.groupId, groupId), eq(memberships.userId, expenses.payerId)))
     .where(and(eq(expenses.id, expenseId), eq(expenses.groupId, groupId)))
     .limit(1);
-  if (!expense) throw new AppError(404, "Gasto no encontrado", "expense_not_found");
+  if (!row) throw new AppError(404, "Gasto no encontrado", "expense_not_found");
 
-  const shares = await db
+  const shareRows = await db
     .select({
       userId: expenseShares.userId,
       alias: users.alias,
       shareAmount: expenseShares.shareAmount,
       sharePercentage: expenseShares.sharePercentage,
+      membershipId: memberships.id,
     })
     .from(expenseShares)
     .innerJoin(users, eq(users.id, expenseShares.userId))
+    .leftJoin(memberships, and(eq(memberships.groupId, groupId), eq(memberships.userId, expenseShares.userId)))
     .where(eq(expenseShares.expenseId, expenseId));
 
-  return { expense, shares };
+  return {
+    expense: row.expense,
+    payerAlias: row.payerAlias,
+    payerHasLeftGroup: row.payerMembershipId === null,
+    shares: shareRows.map(({ membershipId, ...rest }) => ({ ...rest, hasLeftGroup: membershipId === null })),
+  };
 }
 
 /**
@@ -303,13 +358,32 @@ export async function updateExpense(
   if (input.subgroupId) {
     await getSubgroupInGroup(groupId, input.subgroupId);
   }
-  await requireMembership(groupId, input.payerId).catch(() => {
-    throw new AppError(400, "El pagador debe ser miembro del grupo", "payer_not_in_group");
-  });
+
+  /**
+   * Fase 8: quienes ya eran pagador/participante de este gasto ANTES de
+   * esta edicion quedan exentos de la comprobacion de membresia actual,
+   * para no romper el guardado de un gasto historico solo porque uno de
+   * sus participantes abandono el grupo entretanto.
+   */
+  const grandfatheredUserIds = new Set<string>([
+    currentExpense.payerId,
+    ...currentShares.map((share) => share.userId),
+  ]);
+
+  if (!grandfatheredUserIds.has(input.payerId)) {
+    await requireMembership(groupId, input.payerId).catch(() => {
+      throw new AppError(400, "El pagador debe ser miembro del grupo", "payer_not_in_group");
+    });
+  }
 
   const totalCents = parseAmountToCents(input.amount);
   const participantIds = getSplitUserIds(input.split);
-  await assertParticipantsBelongToScope(groupId, input.subgroupId, [...participantIds, input.payerId]);
+  await assertParticipantsBelongToScope(
+    groupId,
+    input.subgroupId,
+    [...participantIds, input.payerId],
+    grandfatheredUserIds,
+  );
 
   const shares = computeShares(totalCents, input.split);
   const newStatus = isOwnExpense ? "modified" : "pending_validation";
