@@ -178,7 +178,7 @@ export default function GroupDetailClient({
 
   useEffect(() => subscribePendingExpenses(() => listPendingExpenses(groupId).then(setPendingExpenses)), [groupId]);
 
-  const displayExpenses = useMemo(() => {
+  const displayExpenses = useMemo<(ExpenseRow & { pendingLocalId?: string })[]>(() => {
     const pendingRows: (ExpenseRow & { pendingLocalId?: string })[] = pendingExpenses.map((pending) => ({
       expense: {
         id: pending.localId,
@@ -255,28 +255,43 @@ export default function GroupDetailClient({
   }
 
   async function handleDeleteExpense(expenseId: string) {
-    const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}`, { method: "DELETE" });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      toast.error(data.error ?? "No se pudo borrar el gasto");
-      return;
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo borrar el gasto");
+        return;
+      }
+      toast.success("Gasto borrado");
+      await load();
+    } catch {
+      toast.error("Sin conexion: no se puede borrar este gasto ahora");
     }
-    toast.success("Gasto borrado");
-    await load();
   }
 
   async function handleValidateExpense(expenseId: string) {
-    const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}/validate`, { method: "POST" });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      toast.error(data.error ?? "No se pudo validar el gasto");
-      return;
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}/validate`, { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo validar el gasto");
+        return;
+      }
+      toast.success("Cambios validados");
+      await load();
+    } catch {
+      toast.error("Sin conexion: no se puede validar este gasto ahora");
     }
-    toast.success("Cambios validados");
-    await load();
   }
 
   if (!detail) {
+    if (offline) {
+      return (
+        <div className="flex flex-col gap-4">
+          <OfflineBanner hasCachedData={false} />
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-4">
         <Skeleton className="h-8 w-1/3" />
@@ -288,6 +303,8 @@ export default function GroupDetailClient({
 
   return (
     <div className="flex flex-col gap-6">
+      {offline ? <OfflineBanner hasCachedData /> : null}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{detail.group.name}</h1>
         <div className="flex items-center gap-2">
@@ -333,9 +350,7 @@ export default function GroupDetailClient({
           ) : null}
         </CardHeader>
         <CardContent>
-          {expenses === null ? (
-            <Skeleton className="h-24 w-full" />
-          ) : expenses.length === 0 ? (
+          {displayExpenses.length === 0 ? (
             <p className="text-sm text-muted-foreground">Todavia no hay gastos registrados.</p>
           ) : (
             <Table>
@@ -351,10 +366,11 @@ export default function GroupDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {expenses.map(({ expense, payerAlias, payerHasLeftGroup }) => {
-                  const canEdit = isAdmin || expense.createdBy === currentUserId;
-                  const canDelete = isAdmin || expense.createdBy === currentUserId;
-                  const canValidate = expense.status === "pending_validation" && expense.createdBy === currentUserId;
+                {displayExpenses.map(({ expense, payerAlias, payerHasLeftGroup, pendingLocalId }) => {
+                  const canEdit = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
+                  const canDelete = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
+                  const canValidate =
+                    !pendingLocalId && expense.status === "pending_validation" && expense.createdBy === currentUserId;
                   return (
                     <TableRow key={expense.id}>
                       <TableCell className="whitespace-nowrap">{expense.expenseDate}</TableCell>
@@ -376,13 +392,26 @@ export default function GroupDetailClient({
                         <Badge variant="secondary">{SPLIT_METHOD_LABEL[expense.splitMethod]}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_VARIANT[expense.status]}>{STATUS_LABEL[expense.status]}</Badge>
+                        {pendingLocalId ? (
+                          <Badge variant="warning">Sin sincronizar</Badge>
+                        ) : (
+                          <Badge variant={STATUS_VARIANT[expense.status]}>{STATUS_LABEL[expense.status]}</Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {expense.amount} {expense.currencyCode}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          {pendingLocalId ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDiscardPending(pendingLocalId)}
+                            >
+                              Descartar
+                            </Button>
+                          ) : null}
                           {canValidate ? (
                             <Button variant="ghost" size="sm" onClick={() => handleValidateExpense(expense.id)}>
                               Validar
@@ -397,7 +426,7 @@ export default function GroupDetailClient({
                               editExpenseId={expense.id}
                             />
                           ) : null}
-                          <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} />
+                          {!pendingLocalId ? <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} /> : null}
                           {canDelete ? (
                             <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>
                               Borrar

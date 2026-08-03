@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { getCache, setCache } from "@/lib/offline/db";
+import { discardPendingExpense, listPendingExpenses, subscribePendingExpenses, type PendingExpense } from "@/lib/offline/sync";
+import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,6 +65,12 @@ const STATUS_VARIANT: Record<ExpenseRow["expense"]["status"], "outline" | "secon
   pending_validation: "warning",
 };
 
+const SUBGROUP_DETAIL_CACHE_KEY = (subgroupId: string) => `subgroup-detail:${subgroupId}`;
+const SUBGROUP_EXPENSES_CACHE_KEY = (subgroupId: string) => `subgroup-expenses:${subgroupId}`;
+const SUBGROUP_STATS_CACHE_KEY = (subgroupId: string) => `subgroup-stats:${subgroupId}`;
+const SUBGROUP_SETTLEMENTS_CACHE_KEY = (subgroupId: string) => `subgroup-settlements:${subgroupId}`;
+const SUBGROUP_ADMIN_CACHE_KEY = (groupId: string) => `group-is-admin:${groupId}`;
+
 export default function SubgroupDetailClient({
   groupId,
   subgroupId,
@@ -77,54 +86,135 @@ export default function SubgroupDetailClient({
   const [settlements, setSettlements] = useState<CurrencySettlement[] | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [offline, setOffline] = useState(false);
+  const [pendingExpenses, setPendingExpenses] = useState<PendingExpense[]>([]);
 
   const load = useCallback(async () => {
-    const [detailRes, expensesRes, statsRes, membersRes, settlementRes] = await Promise.all([
-      apiFetch(`/api/groups/${groupId}/subgroups/${subgroupId}`),
-      apiFetch(`/api/groups/${groupId}/expenses?subgroupId=${subgroupId}`),
-      apiFetch(`/api/groups/${groupId}/expenses/stats?subgroupId=${subgroupId}`),
-      apiFetch(`/api/groups/${groupId}/members`),
-      apiFetch(`/api/groups/${groupId}/settlement?subgroupId=${subgroupId}`),
-    ]);
-    if (!detailRes.ok) {
-      if (detailRes.status === 404) setNotFound(true);
-      return;
+    try {
+      const [detailRes, expensesRes, statsRes, membersRes, settlementRes] = await Promise.all([
+        apiFetch(`/api/groups/${groupId}/subgroups/${subgroupId}`),
+        apiFetch(`/api/groups/${groupId}/expenses?subgroupId=${subgroupId}`),
+        apiFetch(`/api/groups/${groupId}/expenses/stats?subgroupId=${subgroupId}`),
+        apiFetch(`/api/groups/${groupId}/members`),
+        apiFetch(`/api/groups/${groupId}/settlement?subgroupId=${subgroupId}`),
+      ]);
+      if (!detailRes.ok) {
+        if (detailRes.status === 404) setNotFound(true);
+        setOffline(false);
+        return;
+      }
+      const detailData = await detailRes.json();
+      setDetail(detailData);
+      await setCache(SUBGROUP_DETAIL_CACHE_KEY(subgroupId), detailData);
+      if (expensesRes.ok) {
+        const data = (await expensesRes.json()).expenses;
+        setExpenses(data);
+        await setCache(SUBGROUP_EXPENSES_CACHE_KEY(subgroupId), data);
+      }
+      if (statsRes.ok) {
+        const data = (await statsRes.json()).stats;
+        setStats(data);
+        await setCache(SUBGROUP_STATS_CACHE_KEY(subgroupId), data);
+      }
+      if (settlementRes.ok) {
+        const data = (await settlementRes.json()).settlements;
+        setSettlements(data);
+        await setCache(SUBGROUP_SETTLEMENTS_CACHE_KEY(subgroupId), data);
+      }
+      if (membersRes.ok) {
+        const data = await membersRes.json();
+        const role = data.members?.find((m: { userId: string; role: string }) => m.userId === currentUserId)?.role;
+        const admin = role === "admin";
+        setIsAdmin(admin);
+        await setCache(SUBGROUP_ADMIN_CACHE_KEY(groupId), admin);
+      }
+      setOffline(false);
+    } catch {
+      setOffline(true);
+      const [cachedDetail, cachedExpenses, cachedStats, cachedSettlements, cachedAdmin] = await Promise.all([
+        getCache<SubgroupDetail>(SUBGROUP_DETAIL_CACHE_KEY(subgroupId)),
+        getCache<ExpenseRow[]>(SUBGROUP_EXPENSES_CACHE_KEY(subgroupId)),
+        getCache<CurrencyExpenseStats[]>(SUBGROUP_STATS_CACHE_KEY(subgroupId)),
+        getCache<CurrencySettlement[]>(SUBGROUP_SETTLEMENTS_CACHE_KEY(subgroupId)),
+        getCache<boolean>(SUBGROUP_ADMIN_CACHE_KEY(groupId)),
+      ]);
+      if (cachedDetail) setDetail(cachedDetail);
+      if (cachedExpenses) setExpenses(cachedExpenses);
+      if (cachedStats) setStats(cachedStats);
+      if (cachedSettlements) setSettlements(cachedSettlements);
+      if (cachedAdmin !== null) setIsAdmin(cachedAdmin);
     }
-    setDetail(await detailRes.json());
-    if (expensesRes.ok) setExpenses((await expensesRes.json()).expenses);
-    if (statsRes.ok) setStats((await statsRes.json()).stats);
-    if (settlementRes.ok) setSettlements((await settlementRes.json()).settlements);
-    if (membersRes.ok) {
-      const data = await membersRes.json();
-      const role = data.members?.find((m: { userId: string; role: string }) => m.userId === currentUserId)?.role;
-      setIsAdmin(role === "admin");
-    }
+    const pending = await listPendingExpenses(groupId);
+    setPendingExpenses(pending.filter((item) => item.payload.subgroupId === subgroupId));
   }, [groupId, subgroupId, currentUserId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(
+    () =>
+      subscribePendingExpenses(() =>
+        listPendingExpenses(groupId).then((pending) =>
+          setPendingExpenses(pending.filter((item) => item.payload.subgroupId === subgroupId)),
+        ),
+      ),
+    [groupId, subgroupId],
+  );
+
+  const displayExpenses = useMemo<(ExpenseRow & { pendingLocalId?: string })[]>(() => {
+    const pendingRows: (ExpenseRow & { pendingLocalId?: string })[] = pendingExpenses.map((pending) => ({
+      expense: {
+        id: pending.localId,
+        amount: pending.payload.amount,
+        currencyCode: pending.payload.currencyCode,
+        description: pending.payload.description,
+        expenseDate: pending.payload.expenseDate,
+        splitMethod: pending.payload.split.method,
+        createdBy: currentUserId,
+        payerId: pending.payload.payerId,
+        status: "confirmed",
+      },
+      payerAlias: detail?.members.find((m) => m.userId === pending.payload.payerId)?.alias ?? "?",
+      payerHasLeftGroup: false,
+      pendingLocalId: pending.localId,
+    }));
+    return [...pendingRows, ...(expenses ?? [])];
+  }, [expenses, pendingExpenses, detail, currentUserId]);
+
+  async function handleDiscardPending(localId: string) {
+    await discardPendingExpense(localId);
+    toast.success("Gasto pendiente descartado");
+  }
+
   async function handleDeleteExpense(expenseId: string) {
-    const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}`, { method: "DELETE" });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      toast.error(data.error ?? "No se pudo borrar el gasto");
-      return;
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo borrar el gasto");
+        return;
+      }
+      toast.success("Gasto borrado");
+      await load();
+    } catch {
+      toast.error("Sin conexion: no se puede borrar este gasto ahora");
     }
-    toast.success("Gasto borrado");
-    await load();
   }
 
   async function handleValidateExpense(expenseId: string) {
-    const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}/validate`, { method: "POST" });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      toast.error(data.error ?? "No se pudo validar el gasto");
-      return;
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/expenses/${expenseId}/validate`, { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo validar el gasto");
+        return;
+      }
+      toast.success("Cambios validados");
+      await load();
+    } catch {
+      toast.error("Sin conexion: no se puede validar este gasto ahora");
     }
-    toast.success("Cambios validados");
-    await load();
   }
 
   if (notFound) {
@@ -142,6 +232,13 @@ export default function SubgroupDetailClient({
   }
 
   if (!detail) {
+    if (offline) {
+      return (
+        <div className="flex flex-col gap-4">
+          <OfflineBanner hasCachedData={false} />
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-4">
         <Skeleton className="h-8 w-1/3" />
@@ -155,6 +252,8 @@ export default function SubgroupDetailClient({
 
   return (
     <div className="flex flex-col gap-6">
+      {offline ? <OfflineBanner hasCachedData /> : null}
+
       <div>
         <Link
           href={`/groups/${groupId}`}
@@ -210,9 +309,7 @@ export default function SubgroupDetailClient({
           />
         </CardHeader>
         <CardContent>
-          {expenses === null ? (
-            <Skeleton className="h-24 w-full" />
-          ) : expenses.length === 0 ? (
+          {displayExpenses.length === 0 ? (
             <p className="text-sm text-muted-foreground">Todavia no hay gastos registrados en este subgrupo.</p>
           ) : (
             <Table>
@@ -228,9 +325,10 @@ export default function SubgroupDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {expenses.map(({ expense, payerAlias, payerHasLeftGroup }) => {
-                  const canEdit = isAdmin || expense.createdBy === currentUserId;
-                  const canValidate = expense.status === "pending_validation" && expense.createdBy === currentUserId;
+                {displayExpenses.map(({ expense, payerAlias, payerHasLeftGroup, pendingLocalId }) => {
+                  const canEdit = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
+                  const canValidate =
+                    !pendingLocalId && expense.status === "pending_validation" && expense.createdBy === currentUserId;
                   return (
                     <TableRow key={expense.id}>
                       <TableCell className="whitespace-nowrap">{expense.expenseDate}</TableCell>
@@ -252,13 +350,22 @@ export default function SubgroupDetailClient({
                         <Badge variant="secondary">{SPLIT_METHOD_LABEL[expense.splitMethod]}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_VARIANT[expense.status]}>{STATUS_LABEL[expense.status]}</Badge>
+                        {pendingLocalId ? (
+                          <Badge variant="warning">Sin sincronizar</Badge>
+                        ) : (
+                          <Badge variant={STATUS_VARIANT[expense.status]}>{STATUS_LABEL[expense.status]}</Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {expense.amount} {expense.currencyCode}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          {pendingLocalId ? (
+                            <Button variant="ghost" size="sm" onClick={() => handleDiscardPending(pendingLocalId)}>
+                              Descartar
+                            </Button>
+                          ) : null}
                           {canValidate ? (
                             <Button variant="ghost" size="sm" onClick={() => handleValidateExpense(expense.id)}>
                               Validar
@@ -274,7 +381,7 @@ export default function SubgroupDetailClient({
                               lockedSubgroupId={subgroupId}
                             />
                           ) : null}
-                          <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} />
+                          {!pendingLocalId ? <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} /> : null}
                           {canEdit ? (
                             <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>
                               Borrar
