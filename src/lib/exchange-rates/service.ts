@@ -1,60 +1,27 @@
-import { XMLParser } from "fast-xml-parser";
 import { desc, eq, sql } from "drizzle-orm";
-import { db, exchangeRates, currencies } from "@/db";
+import { db, exchangeRates, currencies, appConfig } from "@/db";
 import { AppError } from "@/lib/errors";
+import { createSingleFlight } from "@/lib/concurrency/dedupe";
+import { parseEcbEnvelope } from "./ecb-xml";
+import { shouldAttemptEcbRefresh, type EcbFetchAttempt } from "./freshness";
 
 export const ECB_DAILY_RATES_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
 
-interface EcbCubeRate {
-  "@_currency": string;
-  "@_rate": string;
-}
-
-interface EcbCubeDate {
-  "@_time": string;
-  Cube: EcbCubeRate | EcbCubeRate[];
-}
-
-interface EcbEnvelope {
-  "gesmes:Envelope": {
-    Cube: {
-      Cube: EcbCubeDate | EcbCubeDate[];
-    };
-  };
-}
+/** Observabilidad (Fase 10, backlog): guarda cuando fue el ultimo intento de refresco del BCE y si tuvo exito. */
+const ECB_FETCH_STATUS_CONFIG_KEY = "ecb_last_fetch_status";
 
 /**
- * Descarga y parsea el XML de referencia diaria del BCE (formato
- * "gesmes:Envelope" con un unico bloque `Cube[@time]` que contiene, a su
- * vez, un `Cube[@currency][@rate]` por cada moneda: "unidades de esa
- * moneda por 1 EUR"). El BCE no publica el EUR como fila (su tasa es
- * siempre 1 por definicion).
+ * Descarga el XML de referencia diaria del BCE y lo parsea
+ * (`parseEcbEnvelope`, separado a `./ecb-xml.ts` para poder testear el
+ * formato sin red ni base de datos).
  */
-export async function fetchEcbDailyRates(): Promise<{ asOfDate: string; rates: Map<string, number> }> {
+export async function fetchEcbDailyRates() {
   const response = await fetch(ECB_DAILY_RATES_URL);
   if (!response.ok) {
     throw new AppError(502, "No se pudo consultar el tipo de cambio del BCE", "ecb_fetch_failed");
   }
   const xml = await response.text();
-
-  const parser = new XMLParser({ ignoreAttributes: false });
-  const parsed = parser.parse(xml) as EcbEnvelope;
-
-  const dateCube = parsed["gesmes:Envelope"]?.Cube?.Cube;
-  const dateEntry = Array.isArray(dateCube) ? dateCube[0] : dateCube;
-  if (!dateEntry) {
-    throw new AppError(502, "Respuesta del BCE con formato inesperado", "ecb_parse_failed");
-  }
-
-  const rateEntries = Array.isArray(dateEntry.Cube) ? dateEntry.Cube : [dateEntry.Cube];
-  const rates = new Map<string, number>();
-  for (const entry of rateEntries) {
-    const code = entry["@_currency"];
-    const rate = Number(entry["@_rate"]);
-    if (code && Number.isFinite(rate) && rate > 0) rates.set(code, rate);
-  }
-
-  return { asOfDate: dateEntry["@_time"], rates };
+  return parseEcbEnvelope(xml);
 }
 
 /** Guarda (o actualiza) las tasas del dia indicado, ignorando monedas que no existan en el catalogo. */
@@ -88,24 +55,72 @@ async function getLatestStoredDate(): Promise<string | null> {
   return row?.asOfDate ?? null;
 }
 
-/**
- * Refresca la cache local si no se ha consultado el BCE hoy todavia
- * (comparando la fecha de la ultima fila guardada con la fecha actual en
- * UTC). Si el BCE no esta disponible, no lanza error: se sigue usando la
- * ultima tasa guardada (mejor una conversion con una tasa de ayer que
- * ninguna conversion).
- */
-export async function ensureFreshEcbRates(): Promise<void> {
-  const latestStoredDate = await getLatestStoredDate();
-  const today = new Date().toISOString().slice(0, 10);
-  if (latestStoredDate === today) return;
+async function getLastEcbFetchAttempt(): Promise<EcbFetchAttempt | null> {
+  const [row] = await db
+    .select({ value: appConfig.value })
+    .from(appConfig)
+    .where(eq(appConfig.key, ECB_FETCH_STATUS_CONFIG_KEY))
+    .limit(1);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value) as EcbFetchAttempt;
+  } catch {
+    return null;
+  }
+}
 
+async function recordEcbFetchAttempt(attempt: EcbFetchAttempt): Promise<void> {
+  const value = JSON.stringify(attempt).slice(0, 256);
+  await db
+    .insert(appConfig)
+    .values({
+      key: ECB_FETCH_STATUS_CONFIG_KEY,
+      value,
+      description: "Ultimo intento de refresco de tipos de cambio del BCE (observabilidad, Fase 10)",
+    })
+    .onConflictDoUpdate({
+      target: appConfig.key,
+      set: { value, updatedAt: new Date() },
+    });
+}
+
+async function refreshEcbRatesNow(): Promise<void> {
   try {
     const { asOfDate, rates } = await fetchEcbDailyRates();
     await storeEcbRates(asOfDate, rates);
-  } catch {
-    // Se ignora: si no hay ninguna tasa guardada nunca, `getRateToEur` lanzara su propio error.
+    await recordEcbFetchAttempt({ attemptedAt: new Date().toISOString(), status: "success" });
+  } catch (error) {
+    await recordEcbFetchAttempt({
+      attemptedAt: new Date().toISOString(),
+      status: "error",
+      error: error instanceof Error ? error.message.slice(0, 180) : "Error desconocido",
+    }).catch(() => {
+      // Si ni siquiera se puede registrar el intento fallido, se ignora:
+      // `getRateToEur` seguira funcionando con la ultima tasa guardada.
+    });
   }
+}
+
+/** Un solo refresco en curso por instancia de proceso (evita rafagas de peticiones concurrentes al BCE, ver `createSingleFlight`). */
+const runSingleFlightRefresh = createSingleFlight(refreshEcbRatesNow);
+
+/**
+ * Refresca las tasas del BCE como maximo una vez por dia habil publicado
+ * y, si el ultimo intento fallo, no antes de `ECB_RETRY_INTERVAL_MS` (ver
+ * `shouldAttemptEcbRefresh`, `src/lib/exchange-rates/freshness.ts`):
+ * evita golpear al BCE en cada peticion durante fines de
+ * semana/festivos, cuando `latestStoredDate` nunca llega a igualar "hoy"
+ * porque no se ha publicado nada nuevo. Si el BCE no esta disponible, no
+ * lanza error aqui: se sigue usando la ultima tasa guardada (mejor una
+ * conversion con una tasa de ayer que ninguna conversion); `getRateToEur`
+ * distingue el motivo si finalmente no hay ninguna tasa utilizable.
+ */
+export async function ensureFreshEcbRates(): Promise<void> {
+  const [latestStoredDate, lastAttempt] = await Promise.all([getLatestStoredDate(), getLastEcbFetchAttempt()]);
+
+  if (!shouldAttemptEcbRefresh({ latestStoredDate, lastAttempt, now: new Date() })) return;
+
+  await runSingleFlightRefresh();
 }
 
 /** Tasa "unidades de `currencyCode` por 1 EUR" mas reciente disponible (EUR siempre vale 1). */
@@ -122,6 +137,17 @@ export async function getRateToEur(currencyCode: string): Promise<number> {
     .limit(1);
 
   if (!row) {
+    // Observabilidad (Fase 10, backlog): distingue si no hay tasa porque
+    // el BCE esta caido (el ultimo intento fallo) de si simplemente esa
+    // moneda nunca ha tenido tasa publicada por el BCE.
+    const lastAttempt = await getLastEcbFetchAttempt();
+    if (lastAttempt?.status === "error") {
+      throw new AppError(
+        502,
+        `El Banco Central Europeo no esta disponible y no hay ningun tipo de cambio guardado para "${currencyCode}"`,
+        "ecb_unavailable",
+      );
+    }
     throw new AppError(
       502,
       `No hay tipo de cambio disponible para "${currencyCode}"`,
