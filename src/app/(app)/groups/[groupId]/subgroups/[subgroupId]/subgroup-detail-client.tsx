@@ -25,6 +25,7 @@ import { ExpenseFormDialog } from "../../expense-form-dialog";
 import { ExpenseHistoryDialog } from "../../expense-history-dialog";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
 import { SettlementCard, type CurrencySettlement } from "@/components/settlement-card";
+import { GroupSummaryCard } from "@/components/group-summary-card";
 
 interface SubgroupDetail {
   subgroup: { id: string; name: string; groupId: string };
@@ -300,6 +301,26 @@ export default function SubgroupDetailClient({
           </Link>
         ))}
       </div>
+
+      <GroupSummaryCard
+        name={detail.subgroup.name}
+        scopeLabel="subgrupo"
+        expenses={displayExpenses.map(({ expense, payerAlias, pendingLocalId }) => ({
+          id: expense.id,
+          amount: expense.amount,
+          currencyCode: expense.currencyCode,
+          description: expense.description,
+          expenseDate: expense.expenseDate,
+          payerAlias,
+          pending: Boolean(pendingLocalId),
+        }))}
+        stats={stats}
+        baseCurrencyCode={statsBaseCurrency?.code ?? detail.groupBaseCurrencyCode ?? "EUR"}
+        totalConvertedCents={statsBaseCurrency?.totalConvertedCents ?? null}
+        memberCount={members.length}
+        settlements={settlements}
+        pendingCount={pendingExpenses.length}
+      />
 
       <CollapsibleCard title="Estadisticas" description="Gastos pagados y reparto por miembro dentro de este subgrupo.">
         <ExpenseStatsCharts

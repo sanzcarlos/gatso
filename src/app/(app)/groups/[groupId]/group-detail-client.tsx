@@ -29,6 +29,7 @@ import { InviteMemberDialog } from "./invite-member-dialog";
 import { GroupAuditLogCard } from "./group-audit-log-card";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
 import { SettlementCard, type CurrencySettlement } from "@/components/settlement-card";
+import { GroupSummaryCard } from "@/components/group-summary-card";
 
 interface GroupDetail {
   group: {
@@ -347,6 +348,26 @@ export default function GroupDetailClient({
         {detail.memberCount} / {detail.group.maxMembers} miembros · {detail.subgroupCount} /{" "}
         {detail.group.maxSubgroups} subgrupos
       </p>
+
+      <GroupSummaryCard
+        name={detail.group.name}
+        scopeLabel="grupo"
+        expenses={displayExpenses.map(({ expense, payerAlias, pendingLocalId }) => ({
+          id: expense.id,
+          amount: expense.amount,
+          currencyCode: expense.currencyCode,
+          description: expense.description,
+          expenseDate: expense.expenseDate,
+          payerAlias,
+          pending: Boolean(pendingLocalId),
+        }))}
+        stats={stats}
+        baseCurrencyCode={statsBaseCurrency?.code ?? detail.group.baseCurrencyCode}
+        totalConvertedCents={statsBaseCurrency?.totalConvertedCents ?? null}
+        memberCount={detail.memberCount}
+        settlements={settlements}
+        pendingCount={pendingExpenses.length}
+      />
 
       <CollapsibleCard title="Estadisticas" description="Vista total del grupo: gastos pagados y reparto por miembro.">
         <ExpenseStatsCharts
