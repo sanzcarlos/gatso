@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 
 export interface SettlementBalance {
   userId: string;
@@ -64,38 +64,33 @@ export function SettlementCard({
   convertedOverall?: CurrencySettlement | null;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Liquidacion</CardTitle>
-        <CardDescription>
-          Balance de cada persona y el numero minimo de pagos necesarios para saldar las deudas.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {settlements === null ? (
-          <Skeleton className="h-24 w-full" />
-        ) : settlements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No hay deudas pendientes de liquidar.</p>
-        ) : (
-          <div className="flex flex-col gap-6">
-            {convertedOverall ? (
-              <div className="flex flex-col gap-4 rounded-md border border-primary/40 bg-primary/5 p-3">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Resumen combinado (convertido a {convertedOverall.currencyCode})
-                </p>
-                <SettlementDetail settlement={convertedOverall} />
-              </div>
-            ) : null}
-            {settlements.map((settlement) => (
-              <div key={settlement.currencyCode} className="flex flex-col gap-4">
-                <p className="text-xs font-medium text-muted-foreground">{settlement.currencyCode}</p>
-                <SettlementDetail settlement={settlement} />
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <CollapsibleCard
+      title="Liquidacion"
+      description="Balance de cada persona y el numero minimo de pagos necesarios para saldar las deudas."
+    >
+      {settlements === null ? (
+        <Skeleton className="h-24 w-full" />
+      ) : settlements.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No hay deudas pendientes de liquidar.</p>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {convertedOverall ? (
+            <div className="flex flex-col gap-4 rounded-md border border-primary/40 bg-primary/5 p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Resumen combinado (convertido a {convertedOverall.currencyCode})
+              </p>
+              <SettlementDetail settlement={convertedOverall} />
+            </div>
+          ) : null}
+          {settlements.map((settlement) => (
+            <div key={settlement.currencyCode} className="flex flex-col gap-4">
+              <p className="text-xs font-medium text-muted-foreground">{settlement.currencyCode}</p>
+              <SettlementDetail settlement={settlement} />
+            </div>
+          ))}
+        </div>
+      )}
+    </CollapsibleCard>
   );
 }
 

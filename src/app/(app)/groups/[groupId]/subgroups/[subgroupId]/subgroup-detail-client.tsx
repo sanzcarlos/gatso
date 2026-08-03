@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import {
   Table,
   TableBody,
@@ -301,28 +301,20 @@ export default function SubgroupDetailClient({
         ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Estadisticas</CardTitle>
-          <CardDescription>Gastos pagados y reparto por miembro dentro de este subgrupo.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ExpenseStatsCharts
-            stats={stats}
-            baseCurrencyCode={statsBaseCurrency?.code}
-            totalConvertedCents={statsBaseCurrency?.totalConvertedCents}
-          />
-        </CardContent>
-      </Card>
+      <CollapsibleCard title="Estadisticas" description="Gastos pagados y reparto por miembro dentro de este subgrupo.">
+        <ExpenseStatsCharts
+          stats={stats}
+          baseCurrencyCode={statsBaseCurrency?.code}
+          totalConvertedCents={statsBaseCurrency?.totalConvertedCents}
+        />
+      </CollapsibleCard>
 
       <SettlementCard settlements={settlements} convertedOverall={convertedOverall} />
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-base">Gastos</CardTitle>
-            <CardDescription>Gastos de este subgrupo, mas recientes primero.</CardDescription>
-          </div>
+      <CollapsibleCard
+        title="Gastos"
+        description="Gastos de este subgrupo, mas recientes primero."
+        headerExtra={
           <ExpenseFormDialog
             groupId={groupId}
             members={members}
@@ -331,11 +323,11 @@ export default function SubgroupDetailClient({
             lockedSubgroupId={subgroupId}
             groupBaseCurrencyCode={detail.groupBaseCurrencyCode}
           />
-        </CardHeader>
-        <CardContent>
-          {displayExpenses.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Todavia no hay gastos registrados en este subgrupo.</p>
-          ) : (
+        }
+      >
+        {displayExpenses.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Todavia no hay gastos registrados en este subgrupo.</p>
+        ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -424,9 +416,8 @@ export default function SubgroupDetailClient({
                 })}
               </TableBody>
             </Table>
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </CollapsibleCard>
     </div>
   );
 }

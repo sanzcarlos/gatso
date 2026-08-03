@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import {
   Table,
   TableBody,
@@ -348,29 +348,21 @@ export default function GroupDetailClient({
         {detail.group.maxSubgroups} subgrupos
       </p>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Estadisticas</CardTitle>
-          <CardDescription>Vista total del grupo: gastos pagados y reparto por miembro.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ExpenseStatsCharts
-            stats={stats}
-            baseCurrencyCode={statsBaseCurrency?.code}
-            totalConvertedCents={statsBaseCurrency?.totalConvertedCents}
-          />
-        </CardContent>
-      </Card>
+      <CollapsibleCard title="Estadisticas" description="Vista total del grupo: gastos pagados y reparto por miembro.">
+        <ExpenseStatsCharts
+          stats={stats}
+          baseCurrencyCode={statsBaseCurrency?.code}
+          totalConvertedCents={statsBaseCurrency?.totalConvertedCents}
+        />
+      </CollapsibleCard>
 
       <SettlementCard settlements={settlements} convertedOverall={convertedOverall} />
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-base">Gastos</CardTitle>
-            <CardDescription>Historial de gastos del grupo, mas recientes primero.</CardDescription>
-          </div>
-          {members ? (
+      <CollapsibleCard
+        title="Gastos"
+        description="Historial de gastos del grupo, mas recientes primero."
+        headerExtra={
+          members ? (
             <ExpenseFormDialog
               groupId={groupId}
               members={members.map((m) => ({ userId: m.userId, alias: m.alias }))}
@@ -378,163 +370,148 @@ export default function GroupDetailClient({
               onSaved={load}
               groupBaseCurrencyCode={detail.group.baseCurrencyCode}
             />
-          ) : null}
-        </CardHeader>
-        <CardContent>
-          {displayExpenses.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Todavia no hay gastos registrados.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Descripcion</TableHead>
-                  <TableHead>Pagador</TableHead>
-                  <TableHead>Reparto</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Importe</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {displayExpenses.map(({ expense, payerAlias, payerHasLeftGroup, pendingLocalId, convertedAmount, groupBaseCurrencyCode }) => {
-                  const canEdit = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
-                  const canDelete = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
-                  const canValidate =
-                    !pendingLocalId && expense.status === "pending_validation" && expense.createdBy === currentUserId;
-                  return (
-                    <TableRow key={expense.id}>
-                      <TableCell className="whitespace-nowrap">{expense.expenseDate}</TableCell>
-                      <TableCell>{expense.description}</TableCell>
-                      <TableCell>
-                        <Link
-                          href={`/users/${expense.payerId}`}
-                          className="text-foreground underline-offset-4 hover:underline"
-                        >
-                          {payerAlias}
-                        </Link>
-                        {payerHasLeftGroup ? (
-                          <Badge variant="outline" className="ml-2">
-                            Ha abandonado el grupo
-                          </Badge>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{SPLIT_METHOD_LABEL[expense.splitMethod]}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {pendingLocalId ? (
-                          <Badge variant="warning">Sin sincronizar</Badge>
-                        ) : (
-                          <Badge variant={STATUS_VARIANT[expense.status]}>{STATUS_LABEL[expense.status]}</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {expense.amount} {expense.currencyCode}
-                        {convertedAmount ? (
-                          <span className="ml-1 block text-xs font-normal text-muted-foreground">
-                            (~{convertedAmount} {groupBaseCurrencyCode})
-                          </span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          {pendingLocalId ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDiscardPending(pendingLocalId)}
-                            >
-                              Descartar
-                            </Button>
-                          ) : null}
-                          {canValidate ? (
-                            <Button variant="ghost" size="sm" onClick={() => handleValidateExpense(expense.id)}>
-                              Validar
-                            </Button>
-                          ) : null}
-                          {canEdit && members ? (
-                            <ExpenseFormDialog
-                              groupId={groupId}
-                              members={members.map((m) => ({ userId: m.userId, alias: m.alias }))}
-                              subgroups={subgroups ?? []}
-                              onSaved={load}
-                              editExpenseId={expense.id}
-                              groupBaseCurrencyCode={detail.group.baseCurrencyCode}
-                            />
-                          ) : null}
-                          {!pendingLocalId ? <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} /> : null}
-                          {canDelete ? (
-                            <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>
-                              Borrar
-                            </Button>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Miembros</CardTitle>
-          <InviteMemberDialog groupId={groupId} />
-        </CardHeader>
-        <CardContent>
+          ) : null
+        }
+      >
+        {displayExpenses.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Todavia no hay gastos registrados.</p>
+        ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Alias</TableHead>
-                <TableHead>Rol</TableHead>
-                {isAdmin ? <TableHead className="text-right">Acciones</TableHead> : null}
+                <TableHead>Fecha</TableHead>
+                <TableHead>Descripcion</TableHead>
+                <TableHead>Pagador</TableHead>
+                <TableHead>Reparto</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Importe</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {members?.map((member) => (
-                <TableRow key={member.userId}>
-                  <TableCell>
-                    <Link
-                      href={`/users/${member.userId}`}
-                      className="flex items-center gap-2 text-foreground underline-offset-4 hover:underline"
-                    >
-                      <Avatar className="h-7 w-7">
-                        <AvatarFallback>{member.alias.slice(0, 2).toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      {member.alias}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={member.role === "admin" ? "default" : "secondary"}>
-                      {member.role === "admin" ? "Administrador" : "Miembro"}
-                    </Badge>
-                  </TableCell>
-                  {isAdmin ? (
-                    <TableCell className="text-right">
-                      {member.userId !== currentUserId ? (
-                        <Button variant="ghost" size="sm" onClick={() => handleRemoveMember(member.userId)}>
-                          Eliminar
-                        </Button>
+              {displayExpenses.map(({ expense, payerAlias, payerHasLeftGroup, pendingLocalId, convertedAmount, groupBaseCurrencyCode }) => {
+                const canEdit = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
+                const canDelete = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
+                const canValidate =
+                  !pendingLocalId && expense.status === "pending_validation" && expense.createdBy === currentUserId;
+                return (
+                  <TableRow key={expense.id}>
+                    <TableCell className="whitespace-nowrap">{expense.expenseDate}</TableCell>
+                    <TableCell>{expense.description}</TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/users/${expense.payerId}`}
+                        className="text-foreground underline-offset-4 hover:underline"
+                      >
+                        {payerAlias}
+                      </Link>
+                      {payerHasLeftGroup ? (
+                        <Badge variant="outline" className="ml-2">
+                          Ha abandonado el grupo
+                        </Badge>
                       ) : null}
                     </TableCell>
-                  ) : null}
-                </TableRow>
-              ))}
+                    <TableCell>
+                      <Badge variant="secondary">{SPLIT_METHOD_LABEL[expense.splitMethod]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {pendingLocalId ? (
+                        <Badge variant="warning">Sin sincronizar</Badge>
+                      ) : (
+                        <Badge variant={STATUS_VARIANT[expense.status]}>{STATUS_LABEL[expense.status]}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {expense.amount} {expense.currencyCode}
+                      {convertedAmount ? (
+                        <span className="ml-1 block text-xs font-normal text-muted-foreground">
+                          (~{convertedAmount} {groupBaseCurrencyCode})
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        {pendingLocalId ? (
+                          <Button variant="ghost" size="sm" onClick={() => handleDiscardPending(pendingLocalId)}>
+                            Descartar
+                          </Button>
+                        ) : null}
+                        {canValidate ? (
+                          <Button variant="ghost" size="sm" onClick={() => handleValidateExpense(expense.id)}>
+                            Validar
+                          </Button>
+                        ) : null}
+                        {canEdit && members ? (
+                          <ExpenseFormDialog
+                            groupId={groupId}
+                            members={members.map((m) => ({ userId: m.userId, alias: m.alias }))}
+                            subgroups={subgroups ?? []}
+                            onSaved={load}
+                            editExpenseId={expense.id}
+                            groupBaseCurrencyCode={detail.group.baseCurrencyCode}
+                          />
+                        ) : null}
+                        {!pendingLocalId ? <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} /> : null}
+                        {canDelete ? (
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>
+                            Borrar
+                          </Button>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+        )}
+      </CollapsibleCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Subgrupos</CardTitle>
-          <CardDescription>Cualquier miembro del grupo puede crear subgrupos.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+      <CollapsibleCard title="Miembros" headerExtra={<InviteMemberDialog groupId={groupId} />}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Alias</TableHead>
+              <TableHead>Rol</TableHead>
+              {isAdmin ? <TableHead className="text-right">Acciones</TableHead> : null}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {members?.map((member) => (
+              <TableRow key={member.userId}>
+                <TableCell>
+                  <Link
+                    href={`/users/${member.userId}`}
+                    className="flex items-center gap-2 text-foreground underline-offset-4 hover:underline"
+                  >
+                    <Avatar className="h-7 w-7">
+                      <AvatarFallback>{member.alias.slice(0, 2).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                    {member.alias}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={member.role === "admin" ? "default" : "secondary"}>
+                    {member.role === "admin" ? "Administrador" : "Miembro"}
+                  </Badge>
+                </TableCell>
+                {isAdmin ? (
+                  <TableCell className="text-right">
+                    {member.userId !== currentUserId ? (
+                      <Button variant="ghost" size="sm" onClick={() => handleRemoveMember(member.userId)}>
+                        Eliminar
+                      </Button>
+                    ) : null}
+                  </TableCell>
+                ) : null}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CollapsibleCard>
+
+      <CollapsibleCard title="Subgrupos" description="Cualquier miembro del grupo puede crear subgrupos.">
+        <div className="flex flex-col gap-4">
           {subgroups && subgroups.length > 0 ? (
             <ul className="flex flex-wrap gap-2">
               {subgroups.map((subgroup) => (
@@ -550,26 +527,24 @@ export default function GroupDetailClient({
           ) : (
             <p className="text-sm text-muted-foreground">Todavia no hay subgrupos.</p>
           )}
-        </CardContent>
-        <form onSubmit={handleCreateSubgroup}>
-          <CardContent className="flex flex-col gap-2 pt-0">
-            <Label htmlFor="new-subgroup-name">Nuevo subgrupo</Label>
-            <div className="flex gap-2">
-              <Input
-                id="new-subgroup-name"
-                value={newSubgroupName}
-                onChange={(e) => setNewSubgroupName(e.target.value)}
-                placeholder="Fin de semana"
-                maxLength={64}
-                required
-              />
-              <Button type="submit" disabled={creatingSubgroup}>
-                {creatingSubgroup ? "Creando..." : "Crear"}
-              </Button>
-            </div>
-          </CardContent>
+        </div>
+        <form onSubmit={handleCreateSubgroup} className="flex flex-col gap-2 pt-4">
+          <Label htmlFor="new-subgroup-name">Nuevo subgrupo</Label>
+          <div className="flex gap-2">
+            <Input
+              id="new-subgroup-name"
+              value={newSubgroupName}
+              onChange={(e) => setNewSubgroupName(e.target.value)}
+              placeholder="Fin de semana"
+              maxLength={64}
+              required
+            />
+            <Button type="submit" disabled={creatingSubgroup}>
+              {creatingSubgroup ? "Creando..." : "Crear"}
+            </Button>
+          </div>
         </form>
-      </Card>
+      </CollapsibleCard>
 
       {isAdmin ? <GroupAuditLogCard groupId={groupId} /> : null}
     </div>

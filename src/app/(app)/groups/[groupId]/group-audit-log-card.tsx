@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Bug } from "lucide-react";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface AuditEntry {
@@ -65,71 +64,47 @@ function describeEntry(entry: AuditEntry): string {
  * cargar el historial completo en cada visita a la pagina del grupo).
  */
 export function GroupAuditLogCard({ groupId }: { groupId: string }) {
-  const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
 
-  useEffect(() => {
+  async function handleOpenChange(open: boolean) {
     if (!open || entries !== null) return;
-    apiFetch(`/api/groups/${groupId}/audit-log`).then(async (response) => {
-      if (!response.ok) {
-        toast.error("No se pudo cargar el historial de auditoria");
-        return;
-      }
-      const data = await response.json();
-      setEntries(data.entries);
-    });
-  }, [open, entries, groupId]);
+    const response = await apiFetch(`/api/groups/${groupId}/audit-log`);
+    if (!response.ok) {
+      toast.error("No se pudo cargar el historial de auditoria");
+      return;
+    }
+    const data = await response.json();
+    setEntries(data.entries);
+  }
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between">
-        <div>
-          <CardTitle className="text-base">Auditoria</CardTitle>
-          <CardDescription>
-            Registro inmutable de cambios en el grupo: gastos, subgrupos y miembros. Solo visible
-            para administradores.
-          </CardDescription>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={open ? "Ocultar auditoria" : "Mostrar auditoria"}
-          aria-expanded={open}
-          onClick={() => setOpen((prev) => !prev)}
-        >
-          <Bug />
-        </Button>
-      </CardHeader>
-      {open ? (
-        <CardContent>
-          {entries === null ? (
-            <Skeleton className="h-24 w-full" />
-          ) : entries.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Todavia no hay eventos registrados.</p>
-          ) : (
-            <ul className="flex max-h-80 flex-col gap-3 overflow-y-auto">
-              {entries.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="flex items-start justify-between gap-2 rounded-md border border-border p-3"
-                >
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">{ACTION_LABEL[entry.action]}</Badge>
-                      <span className="text-sm text-foreground">
-                        <strong>{entry.actorAlias}</strong> {describeEntry(entry)}
-                      </span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(entry.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      ) : null}
-    </Card>
+    <CollapsibleCard
+      title="Auditoria"
+      description="Registro inmutable de cambios en el grupo: gastos, subgrupos y miembros. Solo visible para administradores."
+      headerExtra={<Bug className="h-4 w-4 text-muted-foreground" aria-hidden="true" />}
+      onOpenChange={handleOpenChange}
+    >
+      {entries === null ? (
+        <Skeleton className="h-24 w-full" />
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Todavia no hay eventos registrados.</p>
+      ) : (
+        <ul className="flex max-h-80 flex-col gap-3 overflow-y-auto">
+          {entries.map((entry) => (
+            <li key={entry.id} className="flex items-start justify-between gap-2 rounded-md border border-border p-3">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">{ACTION_LABEL[entry.action]}</Badge>
+                  <span className="text-sm text-foreground">
+                    <strong>{entry.actorAlias}</strong> {describeEntry(entry)}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </CollapsibleCard>
   );
 }
