@@ -7,16 +7,24 @@
 // Estrategia:
 // - Precache de un "app shell" minimo (offline fallback + iconos +
 //   manifest) en el evento `install`.
-// - Navegaciones (`request.mode === "navigate"`): red primero, con
-//   fallback a `/offline` si falla (sin red) y no hay nada en cache.
+// - Navegaciones (`request.mode === "navigate"`): red primero,
+//   guardando en cache cada pagina visitada con exito (Fase 10); si la
+//   red falla se sirve esa misma pagina desde cache (aunque este
+//   desactualizada) y, si nunca se visito, se cae a `/offline`. Esto
+//   permite reabrir paginas de grupos ya vistas (p. ej. tras recargar
+//   con el telefono en modo avion) y que el codigo cliente cargue sus
+//   datos desde la cache de IndexedDB (`src/lib/offline/db.ts`).
 // - Peticiones a `/api/*`: siempre red (nunca cache), estos datos son
 //   dinamicos y sensibles (sesion, gastos); nunca deben servirse
-//   obsoletos desde cache.
+//   obsoletos desde cache. La resiliencia offline de los datos de la
+//   app (grupos, gastos) se gestiona aparte, en IndexedDB desde el
+//   propio codigo de React, no en este service worker.
 // - Resto de peticiones GET del mismo origen (JS/CSS/imagenes generados
-//   por Next.js): cache-first con relleno de cache en segundo plano
-//   (stale-while-revalidate), ya que los assets de `_next/static` van
-//   con hash en el nombre (inmutables por build).
-const CACHE_NAME = "gatso-shell-v1";
+//   por Next.js, y las peticiones RSC que usa el router de Next para
+//   navegar entre paginas sin recargar): cache-first con relleno de
+//   cache en segundo plano (stale-while-revalidate), ya que los assets
+//   de `_next/static` van con hash en el nombre (inmutables por build).
+const CACHE_NAME = "gatso-shell-v2";
 const OFFLINE_URL = "/offline";
 const PRECACHE_URLS = [
   OFFLINE_URL,
@@ -53,10 +61,18 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(async () => {
-        const cached = await caches.match(request);
-        return cached ?? (await caches.match(OFFLINE_URL));
-      }),
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          return cached ?? (await caches.match(OFFLINE_URL));
+        }),
     );
     return;
   }

@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { getCache, setCache } from "@/lib/offline/db";
+import { discardPendingExpense, listPendingExpenses, subscribePendingExpenses, type PendingExpense } from "@/lib/offline/sync";
+import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,6 +81,13 @@ const STATUS_VARIANT: Record<ExpenseRow["expense"]["status"], "outline" | "secon
   pending_validation: "warning",
 };
 
+const DETAIL_CACHE_KEY = (groupId: string) => `group-detail:${groupId}`;
+const MEMBERS_CACHE_KEY = (groupId: string) => `group-members:${groupId}`;
+const SUBGROUPS_CACHE_KEY = (groupId: string) => `group-subgroups:${groupId}`;
+const EXPENSES_CACHE_KEY = (groupId: string) => `group-expenses:${groupId}`;
+const STATS_CACHE_KEY = (groupId: string) => `group-stats:${groupId}`;
+const SETTLEMENTS_CACHE_KEY = (groupId: string) => `group-settlements:${groupId}`;
+
 export default function GroupDetailClient({
   groupId,
   currentUserId,
@@ -95,29 +105,103 @@ export default function GroupDetailClient({
   const [newSubgroupName, setNewSubgroupName] = useState("");
   const [creatingSubgroup, setCreatingSubgroup] = useState(false);
   const [leavingGroup, setLeavingGroup] = useState(false);
+  const [offline, setOffline] = useState(false);
+  const [pendingExpenses, setPendingExpenses] = useState<PendingExpense[]>([]);
 
   const isAdmin = members?.find((m) => m.userId === currentUserId)?.role === "admin";
 
   const load = useCallback(async () => {
-    const [detailRes, membersRes, subgroupsRes, expensesRes, statsRes, settlementRes] = await Promise.all([
-      apiFetch(`/api/groups/${groupId}`),
-      apiFetch(`/api/groups/${groupId}/members`),
-      apiFetch(`/api/groups/${groupId}/subgroups`),
-      apiFetch(`/api/groups/${groupId}/expenses`),
-      apiFetch(`/api/groups/${groupId}/expenses/stats`),
-      apiFetch(`/api/groups/${groupId}/settlement`),
-    ]);
-    if (detailRes.ok) setDetail(await detailRes.json());
-    if (membersRes.ok) setMembers((await membersRes.json()).members);
-    if (subgroupsRes.ok) setSubgroups((await subgroupsRes.json()).subgroups);
-    if (expensesRes.ok) setExpenses((await expensesRes.json()).expenses);
-    if (statsRes.ok) setStats((await statsRes.json()).stats);
-    if (settlementRes.ok) setSettlements((await settlementRes.json()).settlements);
+    try {
+      const [detailRes, membersRes, subgroupsRes, expensesRes, statsRes, settlementRes] = await Promise.all([
+        apiFetch(`/api/groups/${groupId}`),
+        apiFetch(`/api/groups/${groupId}/members`),
+        apiFetch(`/api/groups/${groupId}/subgroups`),
+        apiFetch(`/api/groups/${groupId}/expenses`),
+        apiFetch(`/api/groups/${groupId}/expenses/stats`),
+        apiFetch(`/api/groups/${groupId}/settlement`),
+      ]);
+      if (detailRes.ok) {
+        const data = await detailRes.json();
+        setDetail(data);
+        await setCache(DETAIL_CACHE_KEY(groupId), data);
+      }
+      if (membersRes.ok) {
+        const data = (await membersRes.json()).members;
+        setMembers(data);
+        await setCache(MEMBERS_CACHE_KEY(groupId), data);
+      }
+      if (subgroupsRes.ok) {
+        const data = (await subgroupsRes.json()).subgroups;
+        setSubgroups(data);
+        await setCache(SUBGROUPS_CACHE_KEY(groupId), data);
+      }
+      if (expensesRes.ok) {
+        const data = (await expensesRes.json()).expenses;
+        setExpenses(data);
+        await setCache(EXPENSES_CACHE_KEY(groupId), data);
+      }
+      if (statsRes.ok) {
+        const data = (await statsRes.json()).stats;
+        setStats(data);
+        await setCache(STATS_CACHE_KEY(groupId), data);
+      }
+      if (settlementRes.ok) {
+        const data = (await settlementRes.json()).settlements;
+        setSettlements(data);
+        await setCache(SETTLEMENTS_CACHE_KEY(groupId), data);
+      }
+      setOffline(false);
+    } catch {
+      setOffline(true);
+      const [cachedDetail, cachedMembers, cachedSubgroups, cachedExpenses, cachedStats, cachedSettlements] =
+        await Promise.all([
+          getCache<GroupDetail>(DETAIL_CACHE_KEY(groupId)),
+          getCache<Member[]>(MEMBERS_CACHE_KEY(groupId)),
+          getCache<Subgroup[]>(SUBGROUPS_CACHE_KEY(groupId)),
+          getCache<ExpenseRow[]>(EXPENSES_CACHE_KEY(groupId)),
+          getCache<CurrencyExpenseStats[]>(STATS_CACHE_KEY(groupId)),
+          getCache<CurrencySettlement[]>(SETTLEMENTS_CACHE_KEY(groupId)),
+        ]);
+      if (cachedDetail) setDetail(cachedDetail);
+      if (cachedMembers) setMembers(cachedMembers);
+      if (cachedSubgroups) setSubgroups(cachedSubgroups);
+      if (cachedExpenses) setExpenses(cachedExpenses);
+      if (cachedStats) setStats(cachedStats);
+      if (cachedSettlements) setSettlements(cachedSettlements);
+    }
+    setPendingExpenses(await listPendingExpenses(groupId));
   }, [groupId]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => subscribePendingExpenses(() => listPendingExpenses(groupId).then(setPendingExpenses)), [groupId]);
+
+  const displayExpenses = useMemo(() => {
+    const pendingRows: (ExpenseRow & { pendingLocalId?: string })[] = pendingExpenses.map((pending) => ({
+      expense: {
+        id: pending.localId,
+        amount: pending.payload.amount,
+        currencyCode: pending.payload.currencyCode,
+        description: pending.payload.description,
+        expenseDate: pending.payload.expenseDate,
+        splitMethod: pending.payload.split.method,
+        createdBy: currentUserId,
+        payerId: pending.payload.payerId,
+        status: "confirmed",
+      },
+      payerAlias: members?.find((m) => m.userId === pending.payload.payerId)?.alias ?? "?",
+      payerHasLeftGroup: false,
+      pendingLocalId: pending.localId,
+    }));
+    return [...pendingRows, ...(expenses ?? [])];
+  }, [expenses, pendingExpenses, members, currentUserId]);
+
+  async function handleDiscardPending(localId: string) {
+    await discardPendingExpense(localId);
+    toast.success("Gasto pendiente descartado");
+  }
 
   async function handleCreateSubgroup(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

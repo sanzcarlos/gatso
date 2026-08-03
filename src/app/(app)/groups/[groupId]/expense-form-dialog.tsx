@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { queuePendingExpense } from "@/lib/offline/sync";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -160,6 +161,10 @@ export function ExpenseFormDialog({
         }
         setRows(nextRows);
       })
+      .catch(() => {
+        toast.error("No se pudo cargar el gasto (sin conexion)");
+        setOpen(false);
+      })
       .finally(() => setLoadingDetail(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEditMode, editExpenseId, groupId]);
@@ -239,22 +244,42 @@ export function ExpenseFormDialog({
 
     setSubmitting(true);
     try {
-      const url = isEditMode
-        ? `/api/groups/${groupId}/expenses/${editExpenseId}`
-        : `/api/groups/${groupId}/expenses`;
-      const response = await apiFetch(url, {
-        method: isEditMode ? "PATCH" : "POST",
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        toast.error(data.error ?? (isEditMode ? "No se pudo editar el gasto" : "No se pudo crear el gasto"));
+      if (isEditMode) {
+        const response = await apiFetch(`/api/groups/${groupId}/expenses/${editExpenseId}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          toast.error(data.error ?? "No se pudo editar el gasto");
+          return;
+        }
+        toast.success("Gasto actualizado");
+        setOpen(false);
+        await onSaved();
         return;
       }
-      toast.success(isEditMode ? "Gasto actualizado" : "Gasto creado");
-      if (!isEditMode) resetForm();
+
+      try {
+        const response = await apiFetch(`/api/groups/${groupId}/expenses`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          toast.error(data.error ?? "No se pudo crear el gasto");
+          return;
+        }
+        toast.success("Gasto creado");
+      } catch {
+        await queuePendingExpense(groupId, payload);
+        toast.info("Sin conexion: el gasto se ha guardado en este dispositivo y se sincronizara cuando vuelvas a tener conexion.");
+      }
+      resetForm();
       setOpen(false);
       await onSaved();
+    } catch {
+      toast.error(isEditMode ? "No se pudo editar el gasto: sin conexion" : "No se pudo crear el gasto");
     } finally {
       setSubmitting(false);
     }

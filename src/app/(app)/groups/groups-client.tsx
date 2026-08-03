@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { getCache, setCache } from "@/lib/offline/db";
+import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,18 +18,29 @@ interface GroupRow {
   role: "admin" | "member";
 }
 
+const GROUPS_CACHE_KEY = "groups-list";
+
 export default function GroupsClient() {
   const [groups, setGroups] = useState<GroupRow[] | null>(null);
+  const [offline, setOffline] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
 
   async function loadGroups() {
-    const response = await apiFetch("/api/groups");
-    if (response.ok) {
-      const data = await response.json();
-      setGroups(data.groups as GroupRow[]);
+    try {
+      const response = await apiFetch("/api/groups");
+      if (response.ok) {
+        const data = await response.json();
+        setGroups(data.groups as GroupRow[]);
+        setOffline(false);
+        await setCache(GROUPS_CACHE_KEY, data.groups as GroupRow[]);
+      }
+    } catch {
+      const cached = await getCache<GroupRow[]>(GROUPS_CACHE_KEY);
+      if (cached) setGroups(cached);
+      setOffline(true);
     }
   }
 
@@ -51,6 +64,8 @@ export default function GroupsClient() {
       setNewGroupName("");
       toast.success("Grupo creado");
       await loadGroups();
+    } catch {
+      toast.error("Sin conexion: no se pueden crear grupos sin conexion");
     } finally {
       setCreating(false);
     }
@@ -72,6 +87,8 @@ export default function GroupsClient() {
       setInviteCode("");
       toast.success("Te has unido al grupo");
       await loadGroups();
+    } catch {
+      toast.error("Sin conexion: no te puedes unir a un grupo sin conexion");
     } finally {
       setJoining(false);
     }
@@ -80,6 +97,8 @@ export default function GroupsClient() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-bold tracking-tight text-foreground">Mis grupos</h1>
+
+      {offline ? <OfflineBanner hasCachedData={groups !== null} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
