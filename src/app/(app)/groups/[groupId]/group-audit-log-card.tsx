@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Bug } from "lucide-react";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -56,11 +58,18 @@ function describeEntry(entry: AuditEntry): string {
  * membresias, respaldadas por la tabla `audit_logs` (inmutable a nivel de
  * base de datos, ver migracion correspondiente). Visible solo para
  * administradores del grupo.
+ *
+ * Oculto por defecto (Fase 10): al no ser una vista de uso habitual, se
+ * mantiene colapsado hasta que el administrador pulsa el icono de
+ * "bug"/depuracion, y solo entonces se hace la peticion a la API (evita
+ * cargar el historial completo en cada visita a la pagina del grupo).
  */
 export function GroupAuditLogCard({ groupId }: { groupId: string }) {
+  const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
 
   useEffect(() => {
+    if (!open || entries !== null) return;
     apiFetch(`/api/groups/${groupId}/audit-log`).then(async (response) => {
       if (!response.ok) {
         toast.error("No se pudo cargar el historial de auditoria");
@@ -69,45 +78,58 @@ export function GroupAuditLogCard({ groupId }: { groupId: string }) {
       const data = await response.json();
       setEntries(data.entries);
     });
-  }, [groupId]);
+  }, [open, entries, groupId]);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Auditoria</CardTitle>
-        <CardDescription>
-          Registro inmutable de cambios en el grupo: gastos, subgrupos y miembros. Solo visible
-          para administradores.
-        </CardDescription>
+      <CardHeader className="flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-base">Auditoria</CardTitle>
+          <CardDescription>
+            Registro inmutable de cambios en el grupo: gastos, subgrupos y miembros. Solo visible
+            para administradores.
+          </CardDescription>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={open ? "Ocultar auditoria" : "Mostrar auditoria"}
+          aria-expanded={open}
+          onClick={() => setOpen((prev) => !prev)}
+        >
+          <Bug />
+        </Button>
       </CardHeader>
-      <CardContent>
-        {entries === null ? (
-          <Skeleton className="h-24 w-full" />
-        ) : entries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Todavia no hay eventos registrados.</p>
-        ) : (
-          <ul className="flex max-h-80 flex-col gap-3 overflow-y-auto">
-            {entries.map((entry) => (
-              <li
-                key={entry.id}
-                className="flex items-start justify-between gap-2 rounded-md border border-border p-3"
-              >
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary">{ACTION_LABEL[entry.action]}</Badge>
-                    <span className="text-sm text-foreground">
-                      <strong>{entry.actorAlias}</strong> {describeEntry(entry)}
+      {open ? (
+        <CardContent>
+          {entries === null ? (
+            <Skeleton className="h-24 w-full" />
+          ) : entries.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Todavia no hay eventos registrados.</p>
+          ) : (
+            <ul className="flex max-h-80 flex-col gap-3 overflow-y-auto">
+              {entries.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex items-start justify-between gap-2 rounded-md border border-border p-3"
+                >
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">{ACTION_LABEL[entry.action]}</Badge>
+                      <span className="text-sm text-foreground">
+                        <strong>{entry.actorAlias}</strong> {describeEntry(entry)}
+                      </span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(entry.createdAt).toLocaleString()}
                     </span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(entry.createdAt).toLocaleString()}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      ) : null}
     </Card>
   );
 }
