@@ -18,6 +18,23 @@ allowBuilds:
 # 11.x los overrides deben ir aqui (pnpm-workspace.yaml), no en
 # package.json (ignorado silenciosamente desde pnpm 11).
 overrides:
+  # sharp < 0.35.0 arrastra libvips <= 8.18.1, afectado por
+  # CVE-2026-33327, CVE-2026-33328, CVE-2026-35590 y CVE-2026-35591
+  # (GHSA-f88m-g3jw-g9cj). sharp llega como dependencia opcional
+  # transitiva de next (optimizacion de imagenes); se fuerza aqui a
+  # >=0.35.0 (libvips 8.18.3) aunque el proyecto no la use directamente.
+  sharp: ">=0.35.0"
+  # next fija internamente postcss@8.4.31 (build CSS), vulnerable a
+  # GHSA-6g55-p6wh-862q/CVE-2026-45623, GHSA-qx2v-qp2m-jg93/CVE-2026-41305,
+  # GHSA-r28c-9q8g-f849 y GHSA-fxqj-rqcc-2cmp/CVE-2026-69153 (lectura
+  # arbitraria de .map y XSS via sourceMappingURL). Se fuerza a la copia
+  # ya presente en el arbol (8.5.25) que incluye los cuatro parches.
+  postcss: ">=8.5.25"
+  # @esbuild-kit/core-utils (dependencia transitiva de drizzle-kit,
+  # deprecada) fija esbuild@0.18.20, afectado por GHSA-67mh-4wv8-2f99
+  # (CORS abierto en el servidor de desarrollo de esbuild). Se fuerza a
+  # la copia ya presente en el arbol (>=0.25.0) que ya trae el parche.
+  esbuild: ">=0.25.0"
   "typescript-eslint>typescript": "npm:@typescript/typescript6@^6.0.2"
   "@typescript-eslint/eslint-plugin>typescript": "npm:@typescript/typescript6@^6.0.2"
   "@typescript-eslint/parser>typescript": "npm:@typescript/typescript6@^6.0.2"
