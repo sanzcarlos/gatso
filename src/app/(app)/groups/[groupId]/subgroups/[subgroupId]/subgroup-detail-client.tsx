@@ -21,6 +21,7 @@ import { ChevronLeft } from "lucide-react";
 import { ExpenseFormDialog } from "../../expense-form-dialog";
 import { ExpenseHistoryDialog } from "../../expense-history-dialog";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
+import { SettlementCard, type CurrencySettlement } from "@/components/settlement-card";
 
 interface SubgroupDetail {
   subgroup: { id: string; name: string; groupId: string };
@@ -73,15 +74,17 @@ export default function SubgroupDetailClient({
   const [detail, setDetail] = useState<SubgroupDetail | null>(null);
   const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
   const [stats, setStats] = useState<CurrencyExpenseStats[] | null>(null);
+  const [settlements, setSettlements] = useState<CurrencySettlement[] | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
   const load = useCallback(async () => {
-    const [detailRes, expensesRes, statsRes, membersRes] = await Promise.all([
+    const [detailRes, expensesRes, statsRes, membersRes, settlementRes] = await Promise.all([
       apiFetch(`/api/groups/${groupId}/subgroups/${subgroupId}`),
       apiFetch(`/api/groups/${groupId}/expenses?subgroupId=${subgroupId}`),
       apiFetch(`/api/groups/${groupId}/expenses/stats?subgroupId=${subgroupId}`),
       apiFetch(`/api/groups/${groupId}/members`),
+      apiFetch(`/api/groups/${groupId}/settlement?subgroupId=${subgroupId}`),
     ]);
     if (!detailRes.ok) {
       if (detailRes.status === 404) setNotFound(true);
@@ -90,6 +93,7 @@ export default function SubgroupDetailClient({
     setDetail(await detailRes.json());
     if (expensesRes.ok) setExpenses((await expensesRes.json()).expenses);
     if (statsRes.ok) setStats((await statsRes.json()).stats);
+    if (settlementRes.ok) setSettlements((await settlementRes.json()).settlements);
     if (membersRes.ok) {
       const data = await membersRes.json();
       const role = data.members?.find((m: { userId: string; role: string }) => m.userId === currentUserId)?.role;
@@ -188,6 +192,8 @@ export default function SubgroupDetailClient({
           <ExpenseStatsCharts stats={stats} />
         </CardContent>
       </Card>
+
+      <SettlementCard settlements={settlements} />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">

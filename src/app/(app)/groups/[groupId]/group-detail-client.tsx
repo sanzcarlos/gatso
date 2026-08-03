@@ -25,6 +25,7 @@ import { ExpenseHistoryDialog } from "./expense-history-dialog";
 import { InviteMemberDialog } from "./invite-member-dialog";
 import { GroupAuditLogCard } from "./group-audit-log-card";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
+import { SettlementCard, type CurrencySettlement } from "@/components/settlement-card";
 
 interface GroupDetail {
   group: { id: string; name: string; inviteCode: string; maxMembers: number; maxSubgroups: number };
@@ -90,6 +91,7 @@ export default function GroupDetailClient({
   const [subgroups, setSubgroups] = useState<Subgroup[] | null>(null);
   const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
   const [stats, setStats] = useState<CurrencyExpenseStats[] | null>(null);
+  const [settlements, setSettlements] = useState<CurrencySettlement[] | null>(null);
   const [newSubgroupName, setNewSubgroupName] = useState("");
   const [creatingSubgroup, setCreatingSubgroup] = useState(false);
   const [leavingGroup, setLeavingGroup] = useState(false);
@@ -97,18 +99,20 @@ export default function GroupDetailClient({
   const isAdmin = members?.find((m) => m.userId === currentUserId)?.role === "admin";
 
   const load = useCallback(async () => {
-    const [detailRes, membersRes, subgroupsRes, expensesRes, statsRes] = await Promise.all([
+    const [detailRes, membersRes, subgroupsRes, expensesRes, statsRes, settlementRes] = await Promise.all([
       apiFetch(`/api/groups/${groupId}`),
       apiFetch(`/api/groups/${groupId}/members`),
       apiFetch(`/api/groups/${groupId}/subgroups`),
       apiFetch(`/api/groups/${groupId}/expenses`),
       apiFetch(`/api/groups/${groupId}/expenses/stats`),
+      apiFetch(`/api/groups/${groupId}/settlement`),
     ]);
     if (detailRes.ok) setDetail(await detailRes.json());
     if (membersRes.ok) setMembers((await membersRes.json()).members);
     if (subgroupsRes.ok) setSubgroups((await subgroupsRes.json()).subgroups);
     if (expensesRes.ok) setExpenses((await expensesRes.json()).expenses);
     if (statsRes.ok) setStats((await statsRes.json()).stats);
+    if (settlementRes.ok) setSettlements((await settlementRes.json()).settlements);
   }, [groupId]);
 
   useEffect(() => {
@@ -226,6 +230,8 @@ export default function GroupDetailClient({
           <ExpenseStatsCharts stats={stats} />
         </CardContent>
       </Card>
+
+      <SettlementCard settlements={settlements} />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">

@@ -5,7 +5,7 @@
 
 ## Estado actual
 
-**Fase completada: Fase 8 — Abandonar grupo.**
+**Fase completada: Fase 9 — Balances y liquidacion.**
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -1295,3 +1295,132 @@ patron que el resto de rutas de grupo).
 - Verificado con `tsc --noEmit`, `vitest run` (21/21, incluye los 3 tests
   nuevos de `pickAdminReplacement`) y `next build` (nueva ruta
   `/api/groups/[groupId]/leave` generada correctamente).
+
+## Fase 9 — Balances y liquidacion (completada)
+
+### Requisito y por que es un problema NP-dificil, no una simple resta
+
+Pedido explicito del usuario: una vista de balances (quien debe a quien)
+que **minimice el numero de transacciones** necesarias para saldar todas
+las deudas de un grupo. Esto no es solo "cada deudor paga a cada
+acreedor la parte proporcional": ese enfoque naive genera hasta
+`deudores × acreedores` transacciones, mientras que casi siempre existe
+una forma de liquidar el mismo conjunto de deudas con muchas menos
+transacciones (en el caso extremo, un ciclo A→B→C→A de la misma cantidad
+se liquida con **0** transacciones).
+
+El problema exacto ("Optimal Account Balancing") es equivalente a
+particionar el conjunto de balances netos en el minimo numero de
+subconjuntos que suman cero y resolver cada subconjunto por separado, lo
+cual esta emparentado con el problema de la suma de subconjuntos
+(subset-sum) y es **NP-dificil** en el caso general: no existe un
+algoritmo polinomico conocido que garantice el minimo absoluto para
+cualquier numero de participantes. Verificado contra la discusion publica
+y los tests conocidos del problema equivalente "LeetCode 465 - Optimal
+Account Balancing" (usado tambien como base de los tests unitarios de
+esta fase, ver mas abajo) para confirmar el comportamiento esperado del
+algoritmo antes de escribir la implementacion propia.
+
+### Estrategia hibrida (`src/lib/settlements/optimize.ts`)
+
+Dado que un grupo puede tener hasta 64 miembros (limite de Fase 0/2), un
+backtracking exhaustivo sobre todos los balances no es viable en el caso
+general (complejidad factorial). Se combinan dos algoritmos segun el
+numero de balances netos distintos de cero:
+
+- **`minimizeExact`** (hasta `EXACT_THRESHOLD = 8` balances no nulos):
+  backtracking con poda, variante directa del algoritmo de referencia
+  para "Optimal Account Balancing". En cada paso fija el primer balance
+  sin liquidar y prueba a saldarlo por completo contra cada balance de
+  signo opuesto, recursando sobre el resto y podando cualquier rama que
+  ya iguale o supere el mejor recuento de transacciones encontrado hasta
+  el momento. Garantiza el **minimo absoluto** de transacciones.
+- **`minimizeGreedy`** (mas de 8 balances no nulos): heuristica voraz que
+  empareja repetidamente al mayor acreedor con el mayor deudor y liquida
+  el importe menor de los dos. No garantiza el minimo absoluto en todos
+  los casos (es un problema NP-dificil, no hay heuristica polinomica que
+  lo garantice), pero corre en `O(n^2 log n)` y nunca genera mas de
+  `n - 1` transacciones. Se eligio frente a intentar un backtracking con
+  timeout porque un resultado determinista y acotado en tiempo es
+  preferible a una respuesta HTTP con latencia variable o un timeout en
+  produccion.
+- El umbral de 8 es una decision documentada de compromiso: en la
+  practica, la mayoria de grupos de gasto compartido tienen pocos
+  balances pendientes distintos de cero en un momento dado (la mayoria de
+  gastos ya se compensan entre si antes de llegar a la liquidacion), asi
+  que el caso exacto cubre el uso real esperado; se puede revisar el
+  umbral si se observan grupos grandes con muchos balances heterogeneos
+  simultaneos.
+- Validacion previa: `minimizeTransactions` exige que los balances no
+  nulos sumen exactamente 0 (lo que unos deben, otros deben recibirlo);
+  si no es asi hay un error de calculo previo en el agregado de gastos
+  (no deberia ocurrir si los importes se calcularon con
+  `src/lib/money.ts`, que garantiza sumas exactas sin perder centimos) y
+  se lanza `AppError` en vez de devolver un resultado incorrecto en
+  silencio.
+- Tests (`src/lib/settlements/optimize.test.ts`, Vitest): incluyen los
+  dos casos de ejemplo publicados del problema equivalente de LeetCode
+  465 (verificados manualmente contra el resultado esperado documentado
+  alli), casos triviales (0 y 1 transaccion), una comprobacion generica
+  `assertSettles` que aplica las transacciones devueltas sobre los
+  balances originales y confirma que todos quedan exactamente a cero (en
+  vez de solo comparar el recuento), y una propiedad cruzada: el
+  algoritmo exacto nunca genera *mas* transacciones que la heuristica
+  voraz sobre el mismo conjunto de balances.
+
+### Servicio (`src/lib/settlements/service.ts`)
+
+`getGroupSettlement(groupId, userId, subgroupId?)` reutiliza el mismo
+patron de agregacion que `getExpenseStats` (Fase 4-adelanto-2): por cada
+moneda presente en el ambito (grupo completo o un subgrupo), calcula el
+balance neto de cada usuario (`total pagado - total que le corresponde
+segun los repartos`, en centimos enteros) y pasa los balances no nulos a
+`minimizeTransactions`. Devuelve, por moneda, la lista de balances
+ordenada (mayor acreedor primero) y la lista minima de transacciones con
+alias resueltos.
+
+- **Interaccion con Fase 8 (abandonar grupo)**: un usuario que abandono el
+  grupo pero dejo un balance pendiente (pago de mas o de menos en gastos
+  pasados) **sigue apareciendo en la liquidacion** — sus gastos
+  historicos nunca se borran (Fase 8), asi que ignorar su balance
+  ocultaria una deuda real. Cada balance/transaccion incluye
+  `hasLeftGroup` (calculado igual que en `getExpenseStats`: ausencia de
+  fila en `memberships`) para que la UI pueda avisar de que esa persona
+  ya no es miembro actual sin dejar de mostrar lo que debe o le deben.
+- Solo se listan monedas con al menos un balance pendiente (si todos los
+  balances de una moneda son exactamente 0, esa moneda no aparece en la
+  respuesta: no hay nada que liquidar).
+- Nueva ruta `GET /api/groups/[groupId]/settlement` (parametro opcional
+  `?subgroupId=`, mismo patron que `GET .../expenses/stats`).
+
+### UI: `SettlementCard` (`src/components/settlement-card.tsx`)
+
+Componente compartido (mismo patron que `ExpenseStatsCharts`) integrado
+tanto en `group-detail-client.tsx` como en
+`subgroups/[subgroupId]/subgroup-detail-client.tsx`, justo despues de la
+tarjeta de Estadisticas: por cada moneda, lista los balances (badge verde
+"le deben X" / rojo "debe X") y, si hace falta liquidar algo, la lista
+minima de transacciones ("Alias A → Alias B: importe"), con el alias de
+cada persona enlazando a su perfil (`/users/[userId]`) y un badge "Ha
+abandonado el grupo" cuando corresponda. Es una vista **puramente
+informativa**: no persiste que una transaccion se haya realizado de
+verdad (ver limitaciones abajo).
+
+### Pendiente / fuera de alcance de esta fase
+
+- No se implemento un boton "Marcar como pagado" ni una tabla de
+  liquidaciones ya realizadas: la vista siempre recalcula la liquidacion
+  optima a partir del estado actual de los gastos. Si se quisiera
+  registrar que una transaccion sugerida ya se efectuo fuera de la app
+  (transferencia bancaria, efectivo, etc.), haria falta una tabla nueva de
+  "pagos de liquidacion" y volver a calcular el optimo excluyendo lo ya
+  pagado; no estaba en el alcance explicito de esta fase (solo minimizar
+  el numero de transacciones sugeridas), se puede abordar como mejora
+  futura si se pide.
+- El umbral `EXACT_THRESHOLD = 8` para pasar del algoritmo exacto al
+  voraz no se expone como configuracion (a diferencia de otros limites
+  del proyecto via `app_config`): es un detalle de rendimiento interno,
+  no una regla de negocio que un administrador deba poder ajustar.
+- Verificado con `tsc --noEmit`, `vitest run` (29/29, incluye los 8 tests
+  nuevos de `src/lib/settlements/optimize.test.ts`) y `next build` (nueva
+  ruta `/api/groups/[groupId]/settlement` generada correctamente).
