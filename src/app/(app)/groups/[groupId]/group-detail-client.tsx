@@ -29,7 +29,7 @@ import { InviteMemberDialog } from "./invite-member-dialog";
 import { GroupAuditLogCard } from "./group-audit-log-card";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
 import { SettlementCard, type CurrencySettlement } from "@/components/settlement-card";
-import { GroupSummaryCard } from "@/components/group-summary-card";
+import { GroupSummaryCard, type SummaryExpense, type SummaryParticipant } from "@/components/group-summary-card";
 
 interface GroupDetail {
   group: {
@@ -310,6 +310,37 @@ export default function GroupDetailClient({
     }
   }
 
+  function renderSummaryExpenseActions(expense: SummaryExpense) {
+    if (expense.pending) {
+      return <Button variant="ghost" size="sm" onClick={() => handleDiscardPending(expense.id)}>Descartar</Button>;
+    }
+    const canEdit = isAdmin || expense.createdBy === currentUserId;
+    const canValidate = expense.status === "pending_validation" && expense.createdBy === currentUserId;
+    return (
+      <>
+        {canValidate ? <Button variant="ghost" size="sm" onClick={() => handleValidateExpense(expense.id)}>Validar</Button> : null}
+        {canEdit && members ? (
+          <ExpenseFormDialog
+            groupId={groupId}
+            members={members.map((member) => ({ userId: member.userId, alias: member.alias }))}
+            subgroups={subgroups ?? []}
+            onSaved={load}
+            editExpenseId={expense.id}
+            groupBaseCurrencyCode={detail?.group.baseCurrencyCode}
+          />
+        ) : null}
+        <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} />
+        {canEdit ? <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>Borrar</Button> : null}
+      </>
+    );
+  }
+
+  function renderSummaryParticipantActions(participant: SummaryParticipant) {
+    return isAdmin && participant.userId !== currentUserId ? (
+      <Button variant="ghost" size="sm" onClick={() => handleRemoveMember(participant.userId)}>Eliminar</Button>
+    ) : null;
+  }
+
   if (!detail) {
     if (offline) {
       return (
@@ -359,16 +390,44 @@ export default function GroupDetailClient({
           description: expense.description,
           expenseDate: expense.expenseDate,
           payerAlias,
+          payerId: expense.payerId,
+          createdBy: expense.createdBy,
+          status: expense.status,
+          splitMethod: expense.splitMethod,
           pending: Boolean(pendingLocalId),
         }))}
         stats={stats}
         baseCurrencyCode={statsBaseCurrency?.code ?? detail.group.baseCurrencyCode}
         totalConvertedCents={statsBaseCurrency?.totalConvertedCents ?? null}
-        memberCount={detail.memberCount}
+        participants={(members ?? []).map((member) => ({ userId: member.userId, alias: member.alias, role: member.role }))}
         settlements={settlements}
+        subgroups={(subgroups ?? []).map((subgroup) => ({
+          id: subgroup.id,
+          name: subgroup.name,
+          href: `/groups/${groupId}/subgroups/${subgroup.id}`,
+        }))}
         pendingCount={pendingExpenses.length}
+        expenseAction={members ? (
+          <ExpenseFormDialog
+            groupId={groupId}
+            members={members.map((member) => ({ userId: member.userId, alias: member.alias }))}
+            subgroups={subgroups ?? []}
+            onSaved={load}
+            groupBaseCurrencyCode={detail.group.baseCurrencyCode}
+          />
+        ) : null}
+        participantAction={<InviteMemberDialog groupId={groupId} />}
+        subgroupAction={
+          <form onSubmit={handleCreateSubgroup} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex-1"><Label htmlFor="summary-new-subgroup-name">Nuevo subgrupo</Label><Input id="summary-new-subgroup-name" value={newSubgroupName} onChange={(event) => setNewSubgroupName(event.target.value)} placeholder="Fin de semana" maxLength={64} required className="mt-2" /></div>
+            <Button type="submit" disabled={creatingSubgroup}>{creatingSubgroup ? "Creando..." : "Crear subgrupo"}</Button>
+          </form>
+        }
+        renderExpenseActions={renderSummaryExpenseActions}
+        renderParticipantActions={renderSummaryParticipantActions}
       />
 
+      <div className="hidden" aria-hidden="true">
       <CollapsibleCard title="Estadisticas" description="Vista total del grupo: gastos pagados y reparto por miembro.">
         <ExpenseStatsCharts
           stats={stats}
@@ -568,6 +627,7 @@ export default function GroupDetailClient({
       </CollapsibleCard>
 
       {isAdmin ? <GroupAuditLogCard groupId={groupId} /> : null}
+      </div>
     </div>
   );
 }

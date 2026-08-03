@@ -25,7 +25,7 @@ import { ExpenseFormDialog } from "../../expense-form-dialog";
 import { ExpenseHistoryDialog } from "../../expense-history-dialog";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
 import { SettlementCard, type CurrencySettlement } from "@/components/settlement-card";
-import { GroupSummaryCard } from "@/components/group-summary-card";
+import { GroupSummaryCard, type SummaryExpense } from "@/components/group-summary-card";
 
 interface SubgroupDetail {
   subgroup: { id: string; name: string; groupId: string };
@@ -237,6 +237,32 @@ export default function SubgroupDetailClient({
     }
   }
 
+  function renderSummaryExpenseActions(expense: SummaryExpense) {
+    if (expense.pending) {
+      return <Button variant="ghost" size="sm" onClick={() => handleDiscardPending(expense.id)}>Descartar</Button>;
+    }
+    const canEdit = isAdmin || expense.createdBy === currentUserId;
+    const canValidate = expense.status === "pending_validation" && expense.createdBy === currentUserId;
+    return (
+      <>
+        {canValidate ? <Button variant="ghost" size="sm" onClick={() => handleValidateExpense(expense.id)}>Validar</Button> : null}
+        {canEdit && detail ? (
+          <ExpenseFormDialog
+            groupId={groupId}
+            members={detail.members}
+            subgroups={[]}
+            onSaved={load}
+            editExpenseId={expense.id}
+            lockedSubgroupId={subgroupId}
+            groupBaseCurrencyCode={detail.groupBaseCurrencyCode}
+          />
+        ) : null}
+        <ExpenseHistoryDialog groupId={groupId} expenseId={expense.id} />
+        {canEdit ? <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(expense.id)}>Borrar</Button> : null}
+      </>
+    );
+  }
+
   if (notFound) {
     return (
       <div className="flex flex-col gap-4">
@@ -312,16 +338,33 @@ export default function SubgroupDetailClient({
           description: expense.description,
           expenseDate: expense.expenseDate,
           payerAlias,
+          payerId: expense.payerId,
+          createdBy: expense.createdBy,
+          status: expense.status,
+          splitMethod: expense.splitMethod,
           pending: Boolean(pendingLocalId),
         }))}
         stats={stats}
         baseCurrencyCode={statsBaseCurrency?.code ?? detail.groupBaseCurrencyCode ?? "EUR"}
         totalConvertedCents={statsBaseCurrency?.totalConvertedCents ?? null}
-        memberCount={members.length}
+        participants={members.map((member) => ({ userId: member.userId, alias: member.alias }))}
         settlements={settlements}
+        subgroups={[]}
         pendingCount={pendingExpenses.length}
+        expenseAction={
+          <ExpenseFormDialog
+            groupId={groupId}
+            members={members}
+            subgroups={[]}
+            onSaved={load}
+            lockedSubgroupId={subgroupId}
+            groupBaseCurrencyCode={detail.groupBaseCurrencyCode}
+          />
+        }
+        renderExpenseActions={renderSummaryExpenseActions}
       />
 
+      <div className="hidden" aria-hidden="true">
       <CollapsibleCard title="Estadisticas" description="Gastos pagados y reparto por miembro dentro de este subgrupo.">
         <ExpenseStatsCharts
           stats={stats}
@@ -329,6 +372,7 @@ export default function SubgroupDetailClient({
           totalConvertedCents={statsBaseCurrency?.totalConvertedCents}
         />
       </CollapsibleCard>
+      </div>
 
       <SettlementCard settlements={settlements} convertedOverall={convertedOverall} />
 
