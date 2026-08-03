@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth/session";
 import { isPlatformAdmin } from "@/lib/auth/platform-admin";
 import { SiteHeader } from "@/components/site-header";
+import { InstallPrompt } from "@/components/install-prompt";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowRight, Calculator, ReceiptText, ShieldCheck, Wifi, type LucideIcon } from "lucide-react";
@@ -18,6 +19,7 @@ export default async function HomePage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader session={session ? { ...session, isPlatformAdmin: isAdmin } : null} />
+      <InstallPrompt />
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-14 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
         <section className="grid items-center gap-12 lg:grid-cols-[1.08fr_.92fr]">
           <div>

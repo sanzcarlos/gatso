@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { InstallPrompt } from "@/components/install-prompt";
 import { OfflineSyncManager } from "@/components/offline-sync-manager";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -36,7 +35,6 @@ export default function RootLayout({
           {children}
           <Toaster richColors closeButton />
           <ServiceWorkerRegister />
-          <InstallPrompt />
           <OfflineSyncManager />
         </ThemeProvider>
       </body>
