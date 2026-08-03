@@ -50,6 +50,9 @@ export function SiteHeader({ session }: SiteHeaderProps) {
               Administracion
             </Link>
           ) : null}
+          <Link href="/version" className="text-muted-foreground transition-colors hover:text-foreground">
+            Version
+          </Link>
         </nav>
 
         <div className="flex items-center gap-2">
