@@ -5,9 +5,10 @@
 
 ## Estado actual
 
-**Fase completada: Fase 9 — Balances y liquidacion.** Ver tambien "Backlog
-general priorizado" mas abajo: la prioridad media (paginacion por cursor,
-retencion/limpieza y rate limiting adicional) esta completada.
+**Fase completada: Fase 11 — Importacion desde Splitwise.** Ver tambien
+"Backlog general priorizado" mas abajo: la prioridad media (paginacion
+por cursor, retencion/limpieza y rate limiting adicional) esta
+completada.
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -1499,7 +1500,7 @@ se activa al arrancar la app o recibir el evento `online`.
   administrador y optimizacion de liquidaciones. No hay cobertura
   automatizada especifica de esta fase.
 
-## Fase 11 - Importacion desde Splitwise mediante API (pendiente)
+## Fase 11 - Importacion desde Splitwise mediante API (implementada)
 
 Objetivo: permitir que un usuario migre a Gatso sus grupos, participantes,
 gastos, repartos y pagos historicos de Splitwise sin introducirlos a mano.
@@ -1669,6 +1670,118 @@ tokens ni payloads personales completos de Splitwise.
 - La fase solo se considerara completada si una segunda ejecucion crea cero
   duplicados y todos los balances por moneda coinciden exactamente con
   Splitwise.
+
+### Estado de implementacion (completado en esta ronda)
+
+Todo lo descrito arriba (diseno original) se implemento con las
+decisiones concretas siguientes, cada una documentada tambien como
+comentario en el codigo correspondiente:
+
+- **Cifrado y variables de entorno**: `src/lib/crypto/secret-box.ts`
+  (AES-256-GCM) cifra los tokens OAuth antes de guardarlos;
+  `SPLITWISE_CLIENT_ID`/`SPLITWISE_CLIENT_SECRET`/`IMPORT_ENCRYPTION_KEY`
+  anadidas a `src/lib/env.ts` como **opcionales** (no rompen build/CI en
+  entornos sin la integracion configurada) y a `.env.example`.
+- **Esquema de BD** (migracion `drizzle/0009_vengeful_prima.sql`):
+  `external_connections` (token cifrado, unico por usuario+proveedor),
+  `import_jobs` (estado/contadores/cursor de paginacion/cancelacion
+  cooperativa), `external_entity_mappings` (clave de idempotencia:
+  `UNIQUE(provider, entityType, externalId)`), `import_job_errors`
+  (mensaje acotado, nunca payloads completos del proveedor).
+- **Cliente HTTP y OAuth** (`src/lib/imports/splitwise/client.ts`,
+  `oauth-state.ts`): URLs/endpoints verificados contra la documentacion
+  oficial (`dev.splitwise.com`) y el SDK oficial en Python, no
+  inventados. CSRF del flujo OAuth via double-submit cookie (mismo
+  patron que `csrf.ts`). Rutas `GET .../oauth/start`,
+  `GET .../oauth/callback`, `GET|DELETE .../connection`.
+- **Mapeo financiero** (`mapping.ts`): `chooseSplitForSingleExpense`
+  reconstruye el metodo de reparto de Gatso (equal/percentage/fixed) mas
+  especifico que reproduce exactamente los `owed_share` de Splitwise.
+  **Decision documentada para varios pagadores por gasto** (Splitwise lo
+  permite, Gatso no): se descompone en gastos Gatso enlazados por
+  pagador (`decomposeMultiPayerExpense`, algoritmo de redondeo
+  controlado de tablas de doble entrada) en vez de ampliar el modelo de
+  datos de Gatso a multi-pagador, para no tocar el patron
+  Strategy/validacion/UI/estadisticas ya existentes de las Fases 3/4/9.
+  `src/lib/money.ts` gano `distributeProportionally` (generalizacion de
+  `distributeByBasisPoints`) para soportar este algoritmo.
+- **Vista previa** (`preview-service.ts`): solo lectura, agrega
+  participantes/rango de fechas/monedas/contadores de
+  gastos/pagos/borrados y datos no representables en Gatso
+  (recibos/comentarios/recurrencia/categorias), nunca escribe nada.
+- **Job de importacion** (`job-service.ts`): **decision de arquitectura
+  documentada** -- sin cola/worker propio (Gatso son funciones
+  serverless de Vercel), cada llamada a `runJobChunk` procesa paginas
+  hasta agotar el trabajo o un presupuesto de tiempo, persistiendo
+  cursor+contadores tras cada pagina; si se agota el presupuesto el job
+  queda `"running"` y el cliente lo reanuda con `retry`. Pagos
+  (`payment: true`) se mapean a `settlement_payments` (reutilizando la
+  entidad de pagos ya existente desde la Fase 9 ampliada). `createExpense`
+  gano un parametro interno `skipRateLimit` (nunca expuesto por HTTP)
+  para no aplicar el limite de "1 gasto cada N segundos" a una
+  importacion en lote legitima.
+- **Participantes sin cuenta Gatso**: decision documentada (v1) -- no
+  se crean cuentas con contrasenas ficticias (exigencia explicita del
+  diseno original); el usuario debe mapear cada participante de
+  Splitwise a un usuario Gatso que YA sea miembro del grupo destino
+  (invitandolo primero con el sistema de invitaciones existente si hace
+  falta). Los gastos que referencian un participante sin mapear no
+  bloquean el resto de la importacion: se registran como error
+  individual en `import_job_errors`.
+- **Reconciliacion** (`reconciliation.ts`/`reconciliation-service.ts`):
+  compara el `net_balance` que Splitwise ya calcula por gasto/usuario
+  (mas fiable que recalcularlo) contra el balance que Gatso calcula para
+  esos mismos usuarios (reutilizando `getGroupSettlement`). Repetible en
+  cualquier momento, solo lectura.
+- **Rollback** (`rollback-service.ts`): borra unicamente las entidades
+  creadas por un job concreto (via `createdByJobId`), protegiendo las
+  que se hayan editado despues en Gatso; idempotente y auditado.
+- **UI** `/settings/import/splitwise`: asistente paso a paso completo
+  (conectar, elegir grupo, vista previa, destino, mapeo, confirmar,
+  progreso con poll automatico, comprobar balances, revertir). Enlace
+  "Importar" anadido a `SiteHeader`.
+- Verificado en cada uno de los 8 sub-pasos de esta ronda con
+  `tsc --noEmit`, `vitest run` (94/94, incluye 41 tests nuevos de esta
+  fase: cliente/estado OAuth, mapeo financiero, paginacion,
+  vista previa, clasificacion/estado de jobs, reconciliacion, cifrado de
+  secretos) y `next build`.
+
+### Limitaciones conocidas de esta implementacion (v1)
+
+- **Sin importacion incremental real todavia**: el diseno contempla
+  `updated_after` para reimportaciones posteriores, pero `job-service.ts`
+  trata cada gasto como "crear si no existe, omitir si ya existe" (nunca
+  actualiza un gasto ya importado que cambio en Splitwise). Repetir un
+  job es seguro (no duplica) pero no refleja ediciones posteriores en
+  origen.
+- **Multi-pagador**: la descomposicion en gastos enlazados es
+  matematicamente exacta (verificado con tests, incluyendo el peor caso
+  de redondeo), pero cambia la forma en que se ven esos gastos en Gatso
+  (varios gastos con la nota "(parte pagada por este usuario)" en vez de
+  uno solo con varios pagadores, porque Gatso no modela eso).
+- **Presupuesto de tiempo por chunk** (`CHUNK_TIME_BUDGET_MS`, 8s): no
+  verificado contra un limite real de funcion serverless en Vercel en
+  este entorno (no se ha desplegado); es un valor conservador pensado
+  para el plan Hobby (10s), se puede ajustar si el plan de despliegue
+  real tiene otro limite.
+- **Sin tests de integracion reales** (API HTTP real de Splitwise, base
+  de datos real, UI en navegador): toda la logica pura (mapeo financiero,
+  paginacion, clasificacion, reconciliacion, cifrado, estado OAuth) tiene
+  tests unitarios sin red ni BD; la orquestacion que si toca BD/HTTP
+  (`job-service.ts`, `connection-service.ts`, rutas) no tiene cobertura
+  automatizada, mismo patron ya documentado para el resto del proyecto
+  (ver "Prioridad alta - pruebas de integracion y E2E" mas abajo).
+- **Reconciliacion a nivel de grupo completo**, no solo de lo que trajo
+  un job concreto (decision de alcance v1, documentada en
+  `reconciliation-service.ts`): correcto para el caso de uso principal
+  (una importacion unica), sera necesario revisarlo si se implementan
+  importaciones incrementales reales.
+- Pendiente de accion manual del usuario: registrar la app OAuth en
+  Splitwise (`https://dev.splitwise.com/`), configurar
+  `SPLITWISE_CLIENT_ID`/`SPLITWISE_CLIENT_SECRET`/`IMPORT_ENCRYPTION_KEY`
+  en cada entorno (dev/Preview/Production) con callbacks distintos, y
+  probar un flujo real de conexion+importacion contra la API real de
+  Splitwise (no ejecutado en este entorno de desarrollo).
 
 ## Backlog general priorizado
 
