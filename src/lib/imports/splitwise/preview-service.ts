@@ -74,10 +74,24 @@ export async function buildSplitwisePreview(userId: string, sourceGroupExternalI
     fetchAllSplitwiseExpenses(client, sourceGroupExternalId),
   ]);
 
-  const participants: ImportPreviewParticipant[] = group.members.map((member) => ({
-    externalId: String(member.id),
-    displayName: displayNameFor(member),
-  }));
+  const participantById = new Map<string, ImportPreviewParticipant>();
+  for (const member of group.members) {
+    participantById.set(String(member.id), { externalId: String(member.id), displayName: displayNameFor(member) });
+  }
+  // Los gastos historicos pueden mencionar personas que ya abandonaron el
+  // grupo. Tambien deben poder mapearse y conservar su nombre de Splitwise.
+  for (const expense of expenses) {
+    for (const share of expense.users) {
+      const externalId = String(share.user_id);
+      if (!participantById.has(externalId)) {
+        participantById.set(externalId, {
+          externalId,
+          displayName: share.user ? displayNameFor(share.user) : `Participante ${externalId}`,
+        });
+      }
+    }
+  }
+  const participants = [...participantById.values()];
 
   const active = expenses.filter((expense) => !expense.deleted_at);
   const deletedCount = expenses.length - active.length;

@@ -1,5 +1,5 @@
 import { and, eq, inArray, desc, count } from "drizzle-orm";
-import { db, importJobs, importJobErrors, memberships, groups, groupInvitations, externalEntityMappings } from "@/db";
+import { db, importJobs, importJobErrors, memberships, groups, groupInvitations, externalEntityMappings, users } from "@/db";
 import type { ImportJob } from "@/db/schema/import-jobs";
 import { AppError } from "@/lib/errors";
 import { requireGroupAdmin, createGroup } from "@/lib/groups/service";
@@ -8,6 +8,7 @@ import { createGroupInvitation } from "@/lib/groups/invitation-service";
 import { createExpense } from "@/lib/expenses/service";
 import { recordSettlementPayment } from "@/lib/settlements/service";
 import { recordAuditLog } from "@/lib/audit/service";
+import { createProvisionalUser } from "@/lib/users/service";
 import { centsToAmount } from "@/lib/money";
 import { getSplitwiseClientForUser } from "./connection-service";
 import { fetchSplitwiseExpensesPage } from "./paginate";
@@ -80,20 +81,23 @@ function resolveParticipantName(externalUserId: string, memberNames: Map<string,
   return memberNames.get(externalUserId) ?? `Participante ${externalUserId}`;
 }
 
+function namesForExpense(expense: SplitwiseExpense, memberNames: Map<string, string>): Map<string, string> {
+  const names = new Map(memberNames);
+  for (const share of expense.users) {
+    if (share.user) names.set(String(share.user_id), displayNameFor(share.user));
+  }
+  return names;
+}
+
 /**
- * Resuelve un participante de Splitwise sin cuenta Gatso todavia
- * (backlog Fase 11 ampliada: "si no se mapea un usuario de Splitwise a
- * uno de Gatso, se tiene que crear el usuario en Gatso y el
- * administrador del grupo podra ver el enlace de invitacion para poder
- * compartirlo"). En vez de crear una cuenta con contrasena ficticia
- * (descartado explicitamente), genera -de forma idempotente- una
- * invitacion personal vinculada a ese participante externo
+ * Resuelve un participante de Splitwise sin cuenta Gatso creando una
+ * identidad provisional con su nombre visible y una invitacion personal
+ * vinculada al participante externo
  * (`group_invitations.externalParticipantId`): el administrador la ve y
  * la comparte igual que cualquier otra invitacion (`InviteMemberDialog`,
  * ya lista todas las pendientes del grupo). Cuando la acepte,
- * `acceptGroupInvitation` registra la correspondencia real y una
- * importacion posterior del mismo grupo Splitwise resuelve a esa persona
- * automaticamente, sin remapeo manual.
+ * `acceptGroupInvitation` convierte esa misma identidad en una cuenta
+ * activa, conservando sus gastos, membresias y balances.
  *
  * Idempotencia: antes de crear, comprueba si ya existe una invitacion
  * pendiente para este participante EN ESTE GRUPO DESTINO concreto
@@ -117,9 +121,10 @@ async function ensurePendingInvitationForParticipant(
   job: ImportJob,
   externalUserId: string,
   memberNames: Map<string, string>,
-): Promise<void> {
+): Promise<string> {
   const invitationTrackingKey = `${job.targetGroupId}:${externalUserId}`;
   const existingInvitationMapping = await getEntityMapping("user_invitation", invitationTrackingKey);
+  let hasPendingInvitation = false;
   if (existingInvitationMapping) {
     const [invitation] = await db
       .select()
@@ -127,17 +132,72 @@ async function ensurePendingInvitationForParticipant(
       .where(eq(groupInvitations.id, existingInvitationMapping.gatsoId))
       .limit(1);
     const stillPending = Boolean(invitation) && !invitation!.usedAt && invitation!.expiresAt.getTime() > Date.now();
-    if (stillPending) return;
-    await db.delete(externalEntityMappings).where(eq(externalEntityMappings.id, existingInvitationMapping.id));
+    if (stillPending) {
+      hasPendingInvitation = true;
+    } else {
+      await db.delete(externalEntityMappings).where(eq(externalEntityMappings.id, existingInvitationMapping.id));
+    }
   }
 
   const displayName = resolveParticipantName(externalUserId, memberNames);
-  const invitation = await createGroupInvitation(job.targetGroupId!, job.userId, {
-    suggestedDisplayName: displayName.slice(0, 64),
-    externalProvider: SPLITWISE_PROVIDER,
-    externalParticipantId: externalUserId,
+  if (!hasPendingInvitation) {
+    const invitation = await createGroupInvitation(job.targetGroupId!, job.userId, {
+      suggestedDisplayName: displayName.slice(0, 64),
+      externalProvider: SPLITWISE_PROVIDER,
+      externalParticipantId: externalUserId,
+      skipRateLimit: true,
+    });
+    await recordEntityMapping("user_invitation", invitationTrackingKey, invitation.id, job.id);
+  }
+
+  const mapped = await getEntityMapping("user", externalUserId);
+  if (mapped) return mapped.gatsoId;
+
+  return db.transaction(async (tx) => {
+    const concurrent = await getEntityMapping("user", externalUserId, tx);
+    if (concurrent) return concurrent.gatsoId;
+
+    const [group] = await tx.select().from(groups).where(eq(groups.id, job.targetGroupId!)).for("update").limit(1);
+    if (!group) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+    const [memberCountRow] = await tx.select({ value: count() }).from(memberships).where(eq(memberships.groupId, group.id));
+    if ((memberCountRow?.value ?? 0) >= group.maxMembers) {
+      throw new AppError(409, `El grupo ha alcanzado el limite de ${group.maxMembers} miembros`, "group_full");
+    }
+
+    const provisional = await createProvisionalUser(displayName, tx);
+    const [membership] = await tx.insert(memberships).values({ groupId: group.id, userId: provisional.id, role: "member" }).returning();
+    await addUserToAllGroupSubgroups(tx, group.id, provisional.id);
+    await recordEntityMapping("user", externalUserId, provisional.id, job.id, tx);
+    if (membership) {
+      await recordAuditLog(tx, {
+        actorUserId: job.userId,
+        action: "create",
+        entityType: "membership",
+        entityId: membership.id,
+        groupId: group.id,
+        afterData: { ...membership, provisional: true, externalProvider: SPLITWISE_PROVIDER, importJobId: job.id },
+      });
+    }
+    return provisional.id;
   });
-  await recordEntityMapping("user_invitation", invitationTrackingKey, invitation.id, job.id);
+}
+
+async function resolveParticipantUsers(job: ImportJob, externalIds: string[], memberNames: Map<string, string>): Promise<Map<string, string>> {
+  const userMap = await getEntityMappingsFor("user", externalIds);
+  const mappedIds = [...new Set(userMap.values())];
+  const mappedRows = mappedIds.length
+    ? await db.select({ id: users.id, isProvisional: users.isProvisional }).from(users).where(inArray(users.id, mappedIds))
+    : [];
+  const provisionalIds = new Set(mappedRows.filter((row) => row.isProvisional).map((row) => row.id));
+
+  for (const externalId of externalIds) {
+    const mappedId = userMap.get(externalId);
+    if (!mappedId || provisionalIds.has(mappedId)) {
+      userMap.set(externalId, await ensurePendingInvitationForParticipant(job, externalId, memberNames));
+    }
+  }
+  await ensureGroupMembers(job.targetGroupId!, job.userId, [...new Set(userMap.values())], job.id);
+  return userMap;
 }
 
 /**
@@ -151,13 +211,8 @@ async function ensurePendingInvitationForParticipant(
  * comprobado antes de llamar a esta funcion): no es una alta silenciosa
  * en segundo plano.
  *
- * Los participantes de Splitwise SIN cuenta Gatso (no aparecen en el
- * mapeo porque no se ha seleccionado ningun usuario para ellos) siguen
- * sin poder anadirse aqui por diseno (backlog: "no se crearan cuentas
- * con contrasenas ficticias"); en vez de eso, `processSplitwiseExpense`
- * les genera automaticamente una invitacion pendiente
- * (`ensurePendingInvitationForParticipant`) al encontrarlos en un gasto,
- * para que el administrador solo tenga que compartir el enlace.
+ * Los participantes sin cuenta activa se representan mediante una
+ * identidad provisional reclamable, creada por el importador.
  */
 async function ensureGroupMembers(groupId: string, actingUserId: string, gatsoUserIds: string[], importJobId: string): Promise<void> {
   if (gatsoUserIds.length === 0) return;
@@ -213,6 +268,7 @@ export interface CreateSplitwiseImportJobInput {
   targetGroupId?: string | undefined;
   targetGroupName?: string | undefined;
   baseCurrencyCode?: string | undefined;
+  totalEstimated?: number | undefined;
   participantMappings: ParticipantMappingInput[];
 }
 
@@ -222,7 +278,8 @@ export interface CreateSplitwiseImportJobInput {
  * existente administrado por el usuario, "la segunda opcion exige rol de
  * administrador"); los usuarios Gatso mapeados que aun no sean miembros
  * del grupo destino se anaden automaticamente (`ensureGroupMembers`)
- * antes de procesar el primer lote de gastos de forma sincrona.
+ * antes de devolver el job en estado `draft`. El cliente inicia los lotes
+ * inmediatamente despues para poder mostrar el progreso desde el 0%.
  */
 export async function createSplitwiseImportJob(actingUserId: string, input: CreateSplitwiseImportJobInput): Promise<ImportJob> {
   let targetGroupId: string;
@@ -251,6 +308,7 @@ export async function createSplitwiseImportJob(actingUserId: string, input: Crea
       sourceGroupExternalId: input.sourceGroupExternalId,
       createMode: input.createMode,
       targetGroupId,
+      totalEstimated: input.totalEstimated ?? null,
     })
     .returning();
   if (!job) throw new AppError(500, "No se pudo crear el trabajo de importacion");
@@ -272,7 +330,9 @@ export async function createSplitwiseImportJob(actingUserId: string, input: Crea
     afterData: { provider: "splitwise", sourceGroupExternalId: input.sourceGroupExternalId, createMode: input.createMode },
   });
 
-  return runJobChunk(job.id);
+  // El cliente recibe el job inmediatamente y lanza el primer chunk desde
+  // el polling; asi puede pintar progreso desde el primer instante.
+  return job;
 }
 
 interface ExpenseProcessResult {
@@ -289,22 +349,11 @@ async function processSingleExpense(job: ImportJob, expense: SplitwiseExpense, m
   }
 
   const externalIdsInvolved = [...new Set([...payers.map((p) => p.userId), ...participants.map((p) => p.userId)])];
-  const userMap = await getEntityMappingsFor("user", externalIdsInvolved);
-  const missing = externalIdsInvolved.filter((id) => !userMap.has(id));
-  if (missing.length > 0) {
-    const names = missing.map((id) => resolveParticipantName(id, memberNames));
-    for (const id of missing) {
-      await ensurePendingInvitationForParticipant(job, id, memberNames).catch(() => {
-        // No bloquea el registro del error si generar la invitacion falla (ej. rate limit); se reintentara en una proxima ejecucion.
-      });
-    }
-    await insertJobError(
-      job.id,
-      "expense",
-      String(expense.id),
-      `Participantes de Splitwise sin cuenta Gatso todavia: ${names.join(", ")}. Se ha generado (o ya existia) una invitacion pendiente para cada uno; el administrador puede compartirla desde "Invitar" en el grupo.`,
-      true,
-    );
+  let userMap: Map<string, string>;
+  try {
+    userMap = await resolveParticipantUsers(job, externalIdsInvolved, namesForExpense(expense, memberNames));
+  } catch (error) {
+    await insertJobError(job.id, "expense", String(expense.id), describeError(error), true);
     return { imported: 0, skipped: 0, failed: 1 };
   }
 
@@ -416,22 +465,11 @@ async function processSettlementPayment(job: ImportJob, expense: SplitwiseExpens
 
   const fromExternalId = payers[0]!.userId;
   const toExternalId = participants[0]!.userId;
-  const userMap = await getEntityMappingsFor("user", [fromExternalId, toExternalId]);
-  if (!userMap.has(fromExternalId) || !userMap.has(toExternalId)) {
-    const missing = [fromExternalId, toExternalId].filter((id) => !userMap.has(id));
-    const names = missing.map((id) => resolveParticipantName(id, memberNames));
-    for (const id of missing) {
-      await ensurePendingInvitationForParticipant(job, id, memberNames).catch(() => {
-        // Ver comentario equivalente en processSingleExpense.
-      });
-    }
-    await insertJobError(
-      job.id,
-      "payment",
-      mappingKey,
-      `Participantes del pago sin cuenta Gatso todavia: ${names.join(", ")}. Se ha generado (o ya existia) una invitacion pendiente para cada uno.`,
-      true,
-    );
+  let userMap: Map<string, string>;
+  try {
+    userMap = await resolveParticipantUsers(job, [fromExternalId, toExternalId], namesForExpense(expense, memberNames));
+  } catch (error) {
+    await insertJobError(job.id, "payment", mappingKey, describeError(error), true);
     return { imported: 0, skipped: 0, failed: 1 };
   }
 

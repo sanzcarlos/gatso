@@ -88,4 +88,26 @@ describe("buildSplitwisePreview", () => {
     expect(preview.unsupportedDataCounts).toEqual({ withReceipts: 1, withComments: 1, recurring: 1 });
     expect(preview.truncated).toBe(false);
   });
+
+  it("incluye participantes historicos con el nombre embebido en el gasto", async () => {
+    const group: SplitwiseGroup = { id: 1, name: "Viaje", members: [] };
+    const historical = makeExpense({
+      users: [
+        {
+          user_id: 108845445,
+          user: { id: 108845445, first_name: "Oliver", last_name: "Cipri" },
+          paid_share: "10.00",
+          owed_share: "10.00",
+        },
+      ],
+    });
+    getSplitwiseClientForUser.mockResolvedValue({
+      getGroup: vi.fn().mockResolvedValue({ group }),
+      getExpenses: vi.fn().mockResolvedValueOnce({ expenses: [historical] }),
+    });
+
+    const { buildSplitwisePreview } = await import("./preview-service");
+    const preview = await buildSplitwisePreview("user-1", "1");
+    expect(preview.participants).toEqual([{ externalId: "108845445", displayName: "Oliver Cipri" }]);
+  });
 });

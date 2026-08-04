@@ -3,7 +3,7 @@ import { and, count, eq, isNull } from "drizzle-orm";
 import { db, groupInvitations, groups, memberships, users, externalEntityMappings } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
-import { createUserWithUsername } from "@/lib/users/service";
+import { claimProvisionalUser, createUserWithUsername } from "@/lib/users/service";
 import { requireMembership } from "./service";
 import { addUserToAllGroupSubgroups } from "./subgroup-service";
 import { recordAuditLog } from "@/lib/audit/service";
@@ -24,6 +24,8 @@ export interface CreateGroupInvitationOptions {
   /** Fase 11 ampliada: vincula la invitacion a un participante externo (ej. Splitwise) para poder auto-resolverlo al aceptarse. */
   externalProvider?: string | null;
   externalParticipantId?: string | null;
+  /** Uso interno para importaciones por lotes ya autorizadas. */
+  skipRateLimit?: boolean;
 }
 
 /**
@@ -44,10 +46,8 @@ export async function createGroupInvitation(
   options: CreateGroupInvitationOptions | string | null = {},
 ) {
   await requireMembership(groupId, actingUserId);
-  await enforceInvitationCreateRateLimit(actingUserId);
-
-  // Compatibilidad: admite el uso previo (tercer parametro = suggestedDisplayName suelto).
   const normalized: CreateGroupInvitationOptions = typeof options === "string" || options === null ? { suggestedDisplayName: options } : options;
+  if (!normalized.skipRateLimit) await enforceInvitationCreateRateLimit(actingUserId);
 
   const [invitation] = await db
     .insert(groupInvitations)
@@ -61,7 +61,7 @@ export async function createGroupInvitation(
       expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
     })
     .returning();
-  await recordInvitationCreateAttempt(actingUserId);
+  if (!normalized.skipRateLimit) await recordInvitationCreateAttempt(actingUserId);
   if (!invitation) throw new AppError(500, "No se pudo crear la invitacion");
   return invitation;
 }
@@ -198,23 +198,61 @@ export async function acceptGroupInvitation(
       const [group] = await tx.select().from(groups).where(eq(groups.id, invitation.groupId)).for("update").limit(1);
       if (!group) throw new AppError(404, "Grupo no encontrado", "group_not_found");
 
-      const memberCount = await tx
-        .select({ value: count() })
-        .from(memberships)
-        .where(eq(memberships.groupId, group.id));
-      if ((memberCount[0]?.value ?? 0) >= group.maxMembers) {
-        throw new AppError(409, `El grupo ha alcanzado el limite de ${group.maxMembers} miembros`, "group_full");
+      let provisionalUser: { id: string; displayName: string } | undefined;
+      if (invitation.externalProvider && invitation.externalParticipantId) {
+        const [mapping] = await tx
+          .select({ userId: externalEntityMappings.gatsoId })
+          .from(externalEntityMappings)
+          .where(and(
+            eq(externalEntityMappings.provider, invitation.externalProvider),
+            eq(externalEntityMappings.entityType, "user"),
+            eq(externalEntityMappings.externalId, invitation.externalParticipantId),
+          ))
+          .limit(1);
+        if (mapping) {
+          const [candidate] = await tx
+            .select({ id: users.id, displayName: users.displayName, isProvisional: users.isProvisional })
+            .from(users)
+            .where(eq(users.id, mapping.userId))
+            .limit(1);
+          if (candidate?.isProvisional) provisionalUser = candidate;
+        }
       }
 
-      const { user } = await createUserWithUsername(username, password, displayName ?? invitation.suggestedDisplayName, tx);
+      const { user } = provisionalUser
+        ? await claimProvisionalUser(
+            provisionalUser.id,
+            username,
+            password,
+            displayName ?? invitation.suggestedDisplayName ?? provisionalUser.displayName,
+            tx,
+          )
+        : await createUserWithUsername(username, password, displayName ?? invitation.suggestedDisplayName, tx);
+
+      const [existingMembership] = await tx
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(and(eq(memberships.groupId, group.id), eq(memberships.userId, user.id)))
+        .limit(1);
 
       let membershipId: string | undefined;
       try {
-        const [membership] = await tx
-          .insert(memberships)
-          .values({ groupId: group.id, userId: user.id, role: "member" })
-          .returning();
-        membershipId = membership?.id;
+        if (existingMembership) {
+          membershipId = existingMembership.id;
+        } else {
+          const memberCount = await tx
+            .select({ value: count() })
+            .from(memberships)
+            .where(eq(memberships.groupId, group.id));
+          if ((memberCount[0]?.value ?? 0) >= group.maxMembers) {
+            throw new AppError(409, `El grupo ha alcanzado el limite de ${group.maxMembers} miembros`, "group_full");
+          }
+          const [membership] = await tx
+            .insert(memberships)
+            .values({ groupId: group.id, userId: user.id, role: "member" })
+            .returning();
+          membershipId = membership?.id;
+        }
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw new AppError(409, "Ya eres miembro de este grupo", "already_member");
@@ -222,9 +260,9 @@ export async function acceptGroupInvitation(
         throw error;
       }
 
-      await addUserToAllGroupSubgroups(tx, group.id, user.id);
+      if (!existingMembership) await addUserToAllGroupSubgroups(tx, group.id, user.id);
 
-      if (membershipId) {
+      if (membershipId && !existingMembership) {
         await recordAuditLog(tx, {
           actorUserId: user.id,
           action: "create",

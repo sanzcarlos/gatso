@@ -24,6 +24,7 @@ export const createSplitwiseImportJobSchema = z
       .toUpperCase()
       .length(3, "El codigo de moneda debe tener 3 letras")
       .optional(),
+    totalEstimated: z.number().int().nonnegative().optional(),
     participantMappings: z.array(participantMappingSchema).min(1, "Debes mapear al menos un participante"),
   })
   .refine((data) => data.createMode !== "existing" || Boolean(data.targetGroupId), {

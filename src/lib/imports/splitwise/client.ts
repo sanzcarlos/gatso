@@ -34,6 +34,8 @@ export interface SplitwiseGroupsResponse {
 
 export interface SplitwiseExpenseUserShare {
   user_id: number;
+  /** Splitwise incluye normalmente el perfil embebido, incluso para participantes historicos. */
+  user?: SplitwiseUser;
   paid_share: string;
   owed_share: string;
   /** Balance neto ya calculado por Splitwise para esta persona en este gasto (paid_share - owed_share). Usado para reconciliacion (Fase 11): sumarlo por usuario/moneda reproduce el balance total de Splitwise sin tener que recalcularlo nosotros. */

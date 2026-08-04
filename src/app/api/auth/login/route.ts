@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
   const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
 
-  if (!user) {
+  if (!user || user.isProvisional) {
     // Verificacion contra un hash senuelo para no filtrar por temporizacion
     // si el usuario existe o no.
     await verifySecret(DUMMY_HASH, password);

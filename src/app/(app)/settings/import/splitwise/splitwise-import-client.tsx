@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InviteMemberDialog } from "@/app/(app)/groups/[groupId]/invite-member-dialog";
@@ -49,6 +50,8 @@ interface ImportJob {
   id: string;
   status: "draft" | "preview" | "running" | "completed" | "partial" | "failed" | "cancelled";
   targetGroupId: string | null;
+  cursor: string | null;
+  totalEstimated: number | null;
   importedCount: number;
   skippedCount: number;
   failedCount: number;
@@ -349,6 +352,7 @@ export default function SplitwiseImportClient() {
           sourceGroupName: preview.sourceGroupName,
           createMode: "existing",
           targetGroupId,
+          totalEstimated: preview.expenseCount + preview.paymentCount + preview.deletedCount,
           participantMappings,
         }),
       });
@@ -428,6 +432,12 @@ export default function SplitwiseImportClient() {
       setRollingBack(false);
     }
   }
+
+  const progressTotal = job?.totalEstimated ?? 0;
+  const progressProcessed = Math.min(Number(job?.cursor ?? 0), progressTotal || Number(job?.cursor ?? 0));
+  const progressPercentage = progressTotal > 0
+    ? Math.min(100, Math.round((progressProcessed / progressTotal) * 100))
+    : job?.status === "completed" ? 100 : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -606,11 +616,10 @@ export default function SplitwiseImportClient() {
             <CardDescription>
               El desplegable incluye a cualquier persona con la que ya compartes otro grupo en Gatso. Si eliges a
               alguien que aun no es miembro de "{targetGroupName}", se anadira automaticamente al confirmar. Para
-              quien todavia no tenga cuenta en Gatso, puedes usar "Invitar" junto a su nombre ahora mismo, o dejarlo
-              sin mapear: durante la importacion se generara automaticamente una invitacion pendiente para cada
-              participante sin cuenta (visible y compartible desde "Ver invitaciones pendientes" en el paso 5).
-              Cuando la acepte, vuelve a importar el mismo grupo de Splitwise para completar sus gastos. Ningun
-              emparejamiento se hace por nombre automaticamente: revisa cada persona.
+              quien todavia no tenga cuenta en Gatso, puedes dejarlo sin mapear: durante la importacion se creara
+              como participante provisional con su nombre de Splitwise, se anadira al grupo y sus gastos se
+              importaran normalmente. Tambien se generara una invitacion pendiente para que pueda reclamar esa
+              misma identidad sin perder gastos ni balances.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -629,13 +638,6 @@ export default function SplitwiseImportClient() {
                   <div key={participant.externalId} className="flex items-center justify-between gap-3">
                     <span className="text-sm">{participant.displayName}</span>
                     <div className="flex items-center gap-2">
-                      {!mappings[participant.externalId] ? (
-                        <InviteMemberDialog
-                          groupId={targetGroupId}
-                          initialSuggestedDisplayName={participant.displayName}
-                          triggerLabel="Invitar"
-                        />
-                      ) : null}
                       <Select
                         value={mappings[participant.externalId] ?? ""}
                         onValueChange={(value) => handleMappingChange(participant.externalId, value)}
@@ -675,6 +677,16 @@ export default function SplitwiseImportClient() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
+            <div className="mb-2 flex flex-col gap-1.5" aria-live="polite">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{RUNNING_STATUSES.has(job.status) ? "Importando datos..." : "Progreso de importacion"}</span>
+                <span>{progressPercentage}%</span>
+              </div>
+              <Progress value={progressPercentage} />
+              {progressTotal > 0 ? (
+                <span className="text-xs text-muted-foreground">{progressProcessed} de {progressTotal} elementos procesados</span>
+              ) : null}
+            </div>
             <p>
               Importados: <strong>{job.importedCount}</strong> · Omitidos: <strong>{job.skippedCount}</strong> · Fallidos:{" "}
               <strong>{job.failedCount}</strong>
@@ -695,18 +707,13 @@ export default function SplitwiseImportClient() {
                 <Link href={`/groups/${job.targetGroupId}`} className="text-primary underline-offset-4 hover:underline">
                   Ver grupo en Gatso
                 </Link>
-                {jobErrors.length > 0 ? (
-                  <InviteMemberDialog groupId={job.targetGroupId} triggerLabel="Ver invitaciones pendientes" />
-                ) : null}
+                <InviteMemberDialog groupId={job.targetGroupId} triggerLabel="Ver invitaciones pendientes" />
               </div>
             ) : null}
-            {jobErrors.length > 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Los participantes sin cuenta Gatso todavia tienen una invitacion pendiente generada automaticamente:
-                compartela desde "Ver invitaciones pendientes" y vuelve a importar cuando la acepten para completar
-                sus gastos.
-              </p>
-            ) : null}
+            <p className="text-xs text-muted-foreground">
+              Los participantes provisionales ya forman parte del grupo y de sus gastos. Comparte su enlace desde
+              "Ver invitaciones pendientes" para que reclamen su cuenta.
+            </p>
             {reconciliation ? (
               <div className="mt-2 flex flex-col gap-1 rounded-md border border-border p-3">
                 <p className="font-medium text-foreground">

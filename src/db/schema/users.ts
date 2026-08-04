@@ -30,6 +30,8 @@ export const users = pgTable("users", {
   displayName: varchar("display_name", { length: 64 }).notNull(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   recoveryCodeHash: varchar("recovery_code_hash", { length: 255 }),
+  /** Participante importado que aun debe reclamar su cuenta mediante una invitacion. */
+  isProvisional: boolean("is_provisional").notNull().default(false),
   /**
    * Administrador de plataforma (Fase 6): distinto del rol "admin" de
    * `memberships` (que es por grupo). Gestiona catalogos globales como

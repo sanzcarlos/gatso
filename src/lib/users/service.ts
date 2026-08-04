@@ -6,6 +6,7 @@ import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { hashSecret } from "@/lib/auth/password";
 import { generateRecoveryCode, normalizeRecoveryCode } from "@/lib/auth/recovery-code";
+import { nanoid } from "nanoid";
 
 /**
  * Perfil publico de un usuario (solo lectura). Por diseno de privacidad no
@@ -104,6 +105,51 @@ export async function createUserWithUsername(
     if (isUniqueViolation(error)) {
       throw new AppError(409, "El usuario ya esta en uso", "username_taken");
     }
+    throw error;
+  }
+}
+
+/** Crea una identidad interna para importar gastos antes de que la persona acepte su invitacion. */
+export async function createProvisionalUser(displayName: string, client: Tx | typeof db = db) {
+  const username = `pending_${nanoid(20)}`;
+  const passwordHash = await hashSecret(nanoid(64));
+  const [user] = await client
+    .insert(users)
+    .values({
+      username,
+      displayName: displayName.trim().slice(0, 64) || "Participante de Splitwise",
+      passwordHash,
+      recoveryCodeHash: null,
+      isProvisional: true,
+    })
+    .returning({ id: users.id, username: users.username, displayName: users.displayName });
+  if (!user) throw new AppError(500, "No se pudo crear el participante provisional");
+  return user;
+}
+
+/** Convierte un participante provisional en una cuenta normal conservando su UUID, gastos y balances. */
+export async function claimProvisionalUser(
+  userId: string,
+  username: string,
+  password: string,
+  displayName: string,
+  client: Tx | typeof db = db,
+) {
+  const existing = await client.select({ id: users.id }).from(users).where(eq(users.username, username)).limit(1);
+  if (existing.some((row) => row.id !== userId)) throw new AppError(409, "El usuario ya esta en uso", "username_taken");
+  const passwordHash = await hashSecret(password);
+  const recoveryCode = generateRecoveryCode();
+  const recoveryCodeHash = await hashSecret(normalizeRecoveryCode(recoveryCode));
+  try {
+    const [user] = await client
+      .update(users)
+      .set({ username, displayName: displayName.trim(), passwordHash, recoveryCodeHash, isProvisional: false })
+      .where(and(eq(users.id, userId), eq(users.isProvisional, true)))
+      .returning({ id: users.id, username: users.username, displayName: users.displayName });
+    if (!user) throw new AppError(409, "Este participante ya no esta pendiente", "provisional_user_already_claimed");
+    return { user, recoveryCode };
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new AppError(409, "El usuario ya esta en uso", "username_taken");
     throw error;
   }
 }

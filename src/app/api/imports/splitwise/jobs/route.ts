@@ -22,8 +22,8 @@ export async function GET() {
 /**
  * Confirma y crea un trabajo de importacion desde Splitwise (backlog:
  * "confirmacion y creacion del trabajo"). Procesa el primer lote de
- * gastos de forma sincrona antes de responder; si el trabajo tiene mas
- * paginas pendientes, el cliente debe seguir consultando/reintentando
+ * y responde inmediatamente para que el cliente pueda mostrar progreso.
+ * El cliente inicia y continua los lotes mediante
  * (`GET /api/imports/[jobId]`, `POST /api/imports/[jobId]/retry`).
  */
 export async function POST(request: Request) {

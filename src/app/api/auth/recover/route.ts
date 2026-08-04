@@ -44,7 +44,7 @@ export async function POST(request: Request) {
 
   const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
 
-  if (!user || !user.recoveryCodeHash) {
+  if (!user || user.isProvisional || !user.recoveryCodeHash) {
     await verifySecret(DUMMY_HASH, normalizeRecoveryCode(recoveryCode));
     await recordAuthAttempt(username, "recover", false);
     return genericError;
