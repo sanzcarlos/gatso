@@ -1,5 +1,5 @@
 import { and, eq, inArray, desc, count } from "drizzle-orm";
-import { db, importJobs, importJobErrors, memberships, groups } from "@/db";
+import { db, importJobs, importJobErrors, memberships, groups, groupInvitations, externalEntityMappings } from "@/db";
 import type { ImportJob } from "@/db/schema/import-jobs";
 import { AppError } from "@/lib/errors";
 import { requireGroupAdmin, createGroup } from "@/lib/groups/service";
@@ -70,6 +70,18 @@ async function fetchSplitwiseMemberNames(client: SplitwiseClient, sourceGroupExt
 }
 
 /**
+ * Nombre a mostrar para un participante externo (mensajes de error,
+ * alias sugerido de la invitacion). `fetchSplitwiseMemberNames` solo
+ * conoce a los miembros ACTUALES del grupo en Splitwise (`get_group`):
+ * un participante que ya abandono ese grupo en Splitwise pero tiene
+ * gastos historicos ahi no aparece en ese mapa, asi que se usa un
+ * nombre generico con su id en vez del id crudo pelado.
+ */
+function resolveParticipantName(externalUserId: string, memberNames: Map<string, string>): string {
+  return memberNames.get(externalUserId) ?? `Participante ${externalUserId}`;
+}
+
+/**
  * Resuelve un participante de Splitwise sin cuenta Gatso todavia
  * (backlog Fase 11 ampliada: "si no se mapea un usuario de Splitwise a
  * uno de Gatso, se tiene que crear el usuario en Gatso y el
@@ -85,25 +97,48 @@ async function fetchSplitwiseMemberNames(client: SplitwiseClient, sourceGroupExt
  * automaticamente, sin remapeo manual.
  *
  * Idempotencia: antes de crear, comprueba si ya existe una invitacion
- * pendiente para este participante (`entityType: "user_invitation"` en
- * `external_entity_mappings`) para no generar un enlace nuevo cada vez
- * que otro gasto referencia al mismo participante sin mapear.
+ * pendiente para este participante EN ESTE GRUPO DESTINO concreto
+ * (`entityType: "user_invitation"`, clave `${targetGroupId}:${externalUserId}`
+ * en `external_entity_mappings`) para no generar un enlace nuevo cada vez
+ * que otro gasto referencia al mismo participante sin mapear. La clave
+ * incluye el grupo destino (no solo el participante) porque una
+ * invitacion pertenece a un grupo concreto (`group_invitations.groupId`):
+ * sin esto, importar el mismo grupo de Splitwise dentro de dos grupos
+ * Gatso distintos generaria una invitacion para el primero y la
+ * reutilizaria (incorrectamente) como si fuera valida para el segundo.
+ *
+ * Ademas de comprobar que existe una correspondencia, se verifica que la
+ * invitacion referenciada SIGA EXISTIENDO y este vigente (no usada, no
+ * caducada): si el grupo se borro entretanto (cascade elimina
+ * `group_invitations`, pero `external_entity_mappings` no tiene FK al
+ * grupo y queda con una referencia colgante) o la invitacion caduco, se
+ * descarta la correspondencia obsoleta y se genera una nueva.
  */
 async function ensurePendingInvitationForParticipant(
   job: ImportJob,
   externalUserId: string,
   memberNames: Map<string, string>,
 ): Promise<void> {
-  const existingInvitationMapping = await getEntityMapping("user_invitation", externalUserId);
-  if (existingInvitationMapping) return;
+  const invitationTrackingKey = `${job.targetGroupId}:${externalUserId}`;
+  const existingInvitationMapping = await getEntityMapping("user_invitation", invitationTrackingKey);
+  if (existingInvitationMapping) {
+    const [invitation] = await db
+      .select()
+      .from(groupInvitations)
+      .where(eq(groupInvitations.id, existingInvitationMapping.gatsoId))
+      .limit(1);
+    const stillPending = Boolean(invitation) && !invitation!.usedAt && invitation!.expiresAt.getTime() > Date.now();
+    if (stillPending) return;
+    await db.delete(externalEntityMappings).where(eq(externalEntityMappings.id, existingInvitationMapping.id));
+  }
 
-  const displayName = memberNames.get(externalUserId) ?? `Participante ${externalUserId}`;
+  const displayName = resolveParticipantName(externalUserId, memberNames);
   const invitation = await createGroupInvitation(job.targetGroupId!, job.userId, {
     suggestedAlias: suggestAliasFromDisplayName(displayName),
     externalProvider: SPLITWISE_PROVIDER,
     externalParticipantId: externalUserId,
   });
-  await recordEntityMapping("user_invitation", externalUserId, invitation.id, job.id);
+  await recordEntityMapping("user_invitation", invitationTrackingKey, invitation.id, job.id);
 }
 
 /**
@@ -258,7 +293,7 @@ async function processSingleExpense(job: ImportJob, expense: SplitwiseExpense, m
   const userMap = await getEntityMappingsFor("user", externalIdsInvolved);
   const missing = externalIdsInvolved.filter((id) => !userMap.has(id));
   if (missing.length > 0) {
-    const names = missing.map((id) => memberNames.get(id) ?? id);
+    const names = missing.map((id) => resolveParticipantName(id, memberNames));
     for (const id of missing) {
       await ensurePendingInvitationForParticipant(job, id, memberNames).catch(() => {
         // No bloquea el registro del error si generar la invitacion falla (ej. rate limit); se reintentara en una proxima ejecucion.
@@ -385,7 +420,7 @@ async function processSettlementPayment(job: ImportJob, expense: SplitwiseExpens
   const userMap = await getEntityMappingsFor("user", [fromExternalId, toExternalId]);
   if (!userMap.has(fromExternalId) || !userMap.has(toExternalId)) {
     const missing = [fromExternalId, toExternalId].filter((id) => !userMap.has(id));
-    const names = missing.map((id) => memberNames.get(id) ?? id);
+    const names = missing.map((id) => resolveParticipantName(id, memberNames));
     for (const id of missing) {
       await ensurePendingInvitationForParticipant(job, id, memberNames).catch(() => {
         // Ver comentario equivalente en processSingleExpense.
@@ -458,7 +493,17 @@ export async function runJobChunk(jobId: string): Promise<ImportJob> {
   if (!job) throw new AppError(404, "Trabajo de importacion no encontrado", "import_job_not_found");
   if (job.status === "completed" || job.status === "cancelled") return job;
   if (!job.targetGroupId) {
-    return finishJob(jobId, "failed", 0, { importedCount: 0, skippedCount: 0, failedCount: 0 }, "El trabajo no tiene grupo destino asignado");
+    // `targetGroupId` solo llega a NULL via ON DELETE SET NULL: el grupo
+    // destino se borro despues de crear el job (ej. su ultimo miembro lo
+    // abandono, ver `leaveGroup`). El job queda irrecuperable; hay que
+    // iniciar una importacion nueva contra un grupo que exista.
+    return finishJob(
+      jobId,
+      "failed",
+      0,
+      { importedCount: 0, skippedCount: 0, failedCount: 0 },
+      "El grupo destino de esta importacion ya no existe (fue borrado). Inicia una importacion nueva.",
+    );
   }
 
   await db
