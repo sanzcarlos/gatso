@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InviteMemberDialog } from "@/app/(app)/groups/[groupId]/invite-member-dialog";
+import { suggestAliasFromDisplayName } from "@/lib/imports/splitwise/alias-suggestion";
 
 interface SplitwiseGroupOption {
   externalId: string;
@@ -601,9 +602,12 @@ export default function SplitwiseImportClient() {
             </CardTitle>
             <CardDescription>
               El desplegable incluye a cualquier persona con la que ya compartes otro grupo en Gatso. Si eliges a
-              alguien que aun no es miembro de "{targetGroupName}", se anadira automaticamente al confirmar. Ningun
-              emparejamiento se hace por nombre: revisa cada persona. Los gastos con participantes sin mapear no
-              bloquean el resto de la importacion (se registran como error individual en el informe).
+              alguien que aun no es miembro de "{targetGroupName}", se anadira automaticamente al confirmar. Para
+              quien todavia no tenga cuenta en Gatso, usa "Invitar" junto a su nombre: genera un enlace personal (con
+              su nombre de Splitwise sugerido, pero editable) para que cree su propia cuenta; cuando la acepte,
+              pulsa "Actualizar lista" para poder mapearlo. Ningun emparejamiento se hace por nombre automaticamente:
+              revisa cada persona. Los gastos con participantes sin mapear no bloquean el resto de la importacion
+              (se registran como error individual en el informe).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -621,21 +625,30 @@ export default function SplitwiseImportClient() {
                 {preview.participants.map((participant) => (
                   <div key={participant.externalId} className="flex items-center justify-between gap-3">
                     <span className="text-sm">{participant.displayName}</span>
-                    <Select
-                      value={mappings[participant.externalId] ?? ""}
-                      onValueChange={(value) => handleMappingChange(participant.externalId, value)}
-                    >
-                      <SelectTrigger className="w-56" aria-label={`Mapear ${participant.displayName}`}>
-                        <SelectValue placeholder="Sin mapear" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(knownUsers ?? []).map((user) => (
-                          <SelectItem key={user.userId} value={user.userId}>
-                            {user.alias}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-2">
+                      {!mappings[participant.externalId] ? (
+                        <InviteMemberDialog
+                          groupId={targetGroupId}
+                          initialSuggestedAlias={suggestAliasFromDisplayName(participant.displayName)}
+                          triggerLabel="Invitar"
+                        />
+                      ) : null}
+                      <Select
+                        value={mappings[participant.externalId] ?? ""}
+                        onValueChange={(value) => handleMappingChange(participant.externalId, value)}
+                      >
+                        <SelectTrigger className="w-56" aria-label={`Mapear ${participant.displayName}`}>
+                          <SelectValue placeholder="Sin mapear" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(knownUsers ?? []).map((user) => (
+                            <SelectItem key={user.userId} value={user.userId}>
+                              {user.alias}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 ))}
               </div>

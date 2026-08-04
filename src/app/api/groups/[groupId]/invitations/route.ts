@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/require-session";
+import { createInvitationSchema } from "@/lib/validation/groups";
 import { createGroupInvitation, listGroupInvitations } from "@/lib/groups/invitation-service";
 import { errorResponse } from "@/lib/api/handle-error";
 
@@ -23,14 +24,19 @@ export async function GET(_request: Request, { params }: RouteParams) {
   }
 }
 
-export async function POST(_request: Request, { params }: RouteParams) {
+export async function POST(request: Request, { params }: RouteParams) {
   const auth = await requireSession();
   if (auth instanceof NextResponse) return auth;
 
   const { groupId } = await params;
+  const body = await request.json().catch(() => ({}));
+  const parsed = createInvitationSchema.safeParse(body ?? {});
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Datos invalidos", details: parsed.error.flatten() }, { status: 400 });
+  }
 
   try {
-    const invitation = await createGroupInvitation(groupId, auth.userId);
+    const invitation = await createGroupInvitation(groupId, auth.userId, parsed.data.suggestedAlias);
     return NextResponse.json({ invitation }, { status: 201 });
   } catch (error) {
     return errorResponse(error);

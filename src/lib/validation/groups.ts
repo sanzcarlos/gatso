@@ -33,6 +33,17 @@ export const joinGroupSchema = z.object({
   inviteCode: z.string().trim().min(1, "El codigo de invitacion es obligatorio"),
 });
 
+/**
+ * `suggestedAlias` es solo una sugerencia mostrada en el formulario de
+ * aceptacion (ej. nombre de un participante importado de Splitwise, Fase
+ * 11): deliberadamente mas permisivo que `aliasSchema` (no exige el
+ * patron final de alias, la persona invitada puede editarlo libremente
+ * antes de aceptar).
+ */
+export const createInvitationSchema = z.object({
+  suggestedAlias: z.string().trim().max(64, "Maximo 64 caracteres").optional(),
+});
+
 export const acceptInvitationSchema = z.object({
   alias: aliasSchema,
   password: passwordSchema,
@@ -42,4 +53,5 @@ export type CreateGroupInput = z.infer<typeof createGroupSchema>;
 export type UpdateGroupInput = z.infer<typeof updateGroupSchema>;
 export type CreateSubgroupInput = z.infer<typeof createSubgroupSchema>;
 export type JoinGroupInput = z.infer<typeof joinGroupSchema>;
+export type CreateInvitationInput = z.infer<typeof createInvitationSchema>;
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;

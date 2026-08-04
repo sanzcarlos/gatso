@@ -1,0 +1,1 @@
+ALTER TABLE "group_invitations" ADD COLUMN "suggested_alias" varchar(64);

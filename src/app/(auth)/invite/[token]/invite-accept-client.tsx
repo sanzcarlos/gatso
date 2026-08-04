@@ -20,6 +20,7 @@ import {
 interface Preview {
   groupName: string;
   expiresAt: string;
+  suggestedAlias: string | null;
 }
 
 export default function InviteAcceptClient({ token }: { token: string }) {
@@ -39,6 +40,7 @@ export default function InviteAcceptClient({ token }: { token: string }) {
         return;
       }
       setPreview(data as Preview);
+      if (data.suggestedAlias) setAlias(data.suggestedAlias);
     });
   }, [token]);
 
@@ -114,6 +116,11 @@ export default function InviteAcceptClient({ token }: { token: string }) {
               maxLength={32}
               required
             />
+            {preview.suggestedAlias ? (
+              <p className="text-xs text-muted-foreground">
+                Nombre sugerido por quien te invito: puedes cambiarlo antes de continuar.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="invite-password">Contrasena</Label>

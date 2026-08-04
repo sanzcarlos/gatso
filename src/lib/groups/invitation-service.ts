@@ -24,8 +24,18 @@ const generateToken = customAlphabet(TOKEN_ALPHABET, 32);
  * (compartible libremente, sin caducidad), esta genera un enlace unico de
  * un solo uso que caduca a las 24 horas, pensado para invitar a una
  * persona concreta que todavia no tiene cuenta en la aplicacion.
+ *
+ * `suggestedAlias` (opcional, Fase 11): nombre propuesto para la persona
+ * invitada (ej. su nombre en Splitwise al importar un grupo), mostrado
+ * como valor prellenado -pero editable- en el formulario de aceptacion;
+ * nunca crea la cuenta, la persona invitada sigue eligiendo su propio
+ * alias real al aceptar.
  */
-export async function createGroupInvitation(groupId: string, actingUserId: string) {
+export async function createGroupInvitation(
+  groupId: string,
+  actingUserId: string,
+  suggestedAlias?: string | null,
+) {
   await requireMembership(groupId, actingUserId);
   await enforceInvitationCreateRateLimit(actingUserId);
 
@@ -35,6 +45,7 @@ export async function createGroupInvitation(groupId: string, actingUserId: strin
       groupId,
       token: generateToken(),
       createdBy: actingUserId,
+      suggestedAlias: suggestedAlias?.trim() || null,
       expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
     })
     .returning();
@@ -49,6 +60,7 @@ export async function listGroupInvitations(groupId: string, actingUserId: string
     .select({
       id: groupInvitations.id,
       token: groupInvitations.token,
+      suggestedAlias: groupInvitations.suggestedAlias,
       expiresAt: groupInvitations.expiresAt,
       usedAt: groupInvitations.usedAt,
       createdAt: groupInvitations.createdAt,
@@ -81,7 +93,11 @@ export async function getInvitationPreview(token: string) {
 
   assertInvitationValid(row.invitation);
 
-  return { groupName: row.groupName, expiresAt: row.invitation.expiresAt };
+  return {
+    groupName: row.groupName,
+    expiresAt: row.invitation.expiresAt,
+    suggestedAlias: row.invitation.suggestedAlias,
+  };
 }
 
 /**
