@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, CircleCheck, HandCoins, Scale, WalletCards } from "lucide-react";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,18 @@ export interface CurrencySettlement {
 
 function toAmount(cents: number): string {
   return (Math.abs(cents) / 100).toFixed(2);
+}
+
+function formatMoney(cents: number, currencyCode: string): string {
+  try {
+    return new Intl.NumberFormat("es-ES", {
+      style: "currency",
+      currency: currencyCode,
+      currencyDisplay: "symbol",
+    }).format(Math.abs(cents) / 100);
+  } catch {
+    return `${toAmount(cents)} ${currencyCode}`;
+  }
 }
 
 function AliasLink({ userId, alias, hasLeftGroup }: { userId: string; alias: string; hasLeftGroup: boolean }) {
@@ -112,23 +124,32 @@ function MarkPaidButton({ groupId, subgroupId, currencyCode, transaction, onPaid
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm">
-          Marcar como pagado
+        <Button type="button" size="sm" className="w-full sm:w-auto">
+          <Check />
+          Marcar pagado
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Confirmar pago</DialogTitle>
-          <DialogDescription>
-            <AliasLink userId={transaction.fromUserId} alias={transaction.fromAlias} hasLeftGroup={transaction.fromHasLeftGroup} />
-            {" paga a "}
-            <AliasLink userId={transaction.toUserId} alias={transaction.toAlias} hasLeftGroup={transaction.toHasLeftGroup} />
-            {" "}
-            <span className="font-medium text-foreground">
-              {toAmount(transaction.amountCents)} {currencyCode}
-            </span>
-          </DialogDescription>
+          <DialogTitle>Registrar como pagado</DialogTitle>
+          <DialogDescription>Confirma que este pago ya se ha realizado fuera de Gatso.</DialogDescription>
         </DialogHeader>
+        <div className="rounded-xl border border-border bg-muted/45 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 text-sm">
+              <p className="text-xs text-muted-foreground">De</p>
+              <AliasLink userId={transaction.fromUserId} alias={transaction.fromAlias} hasLeftGroup={transaction.fromHasLeftGroup} />
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            <div className="min-w-0 text-right text-sm">
+              <p className="text-xs text-muted-foreground">Para</p>
+              <AliasLink userId={transaction.toUserId} alias={transaction.toAlias} hasLeftGroup={transaction.toHasLeftGroup} />
+            </div>
+          </div>
+          <p className="mt-4 border-t border-border pt-3 text-center text-2xl font-bold tracking-tight text-foreground">
+            {formatMoney(transaction.amountCents, currencyCode)}
+          </p>
+        </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="settlement-payment-method">Metodo de pago</Label>
           <Select value={method} onValueChange={(value) => setMethod(value as SettlementPaymentMethod)}>
@@ -145,8 +166,8 @@ function MarkPaidButton({ groupId, subgroupId, currencyCode, transaction, onPaid
           </Select>
         </div>
         <DialogFooter>
-          <Button type="button" onClick={handleConfirm} disabled={submitting}>
-            {submitting ? "Guardando..." : "Confirmar pago"}
+          <Button type="button" onClick={handleConfirm} disabled={submitting} className="w-full sm:w-auto">
+            {submitting ? "Guardando..." : "Sí, registrar pago"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -192,28 +213,67 @@ export function SettlementCard({
   isAdmin?: boolean;
   onPaid?: (() => Promise<void> | void) | undefined;
 }) {
+  const pendingPayments = settlements?.reduce((total, settlement) => total + settlement.transactions.length, 0) ?? 0;
+
   return (
     <CollapsibleCard
-      title="Liquidacion"
-      description="Balance de cada persona y el numero minimo de pagos necesarios para saldar las deudas."
+      title="Liquidación"
+      description="Los pagos necesarios para dejar las cuentas a cero."
+      headerExtra={
+        settlements !== null && pendingPayments > 0 ? (
+          <Badge variant="warning">{pendingPayments} {pendingPayments === 1 ? "pago" : "pagos"}</Badge>
+        ) : null
+      }
     >
       {settlements === null ? (
-        <Skeleton className="h-24 w-full" />
+        <div className="flex flex-col gap-3" aria-label="Cargando liquidación">
+          <Skeleton className="h-20 w-full rounded-xl" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+        </div>
       ) : settlements.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No hay deudas pendientes de liquidar.</p>
+        <div className="flex flex-col items-center rounded-2xl border border-success/20 bg-success/5 px-4 py-8 text-center">
+          <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-success/15 text-success">
+            <CircleCheck className="h-6 w-6" aria-hidden="true" />
+          </span>
+          <p className="font-semibold text-foreground">Todo está saldado</p>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">No queda ningún pago pendiente en este grupo.</p>
+        </div>
       ) : (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-5">
           {convertedOverall ? (
-            <div className="flex flex-col gap-4 rounded-md border border-primary/40 bg-primary/5 p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Resumen combinado (convertido a {convertedOverall.currencyCode})
-              </p>
-              <SettlementDetail settlement={convertedOverall} allowMarkPaid={false} />
+            <div className="flex flex-col gap-4 rounded-2xl border border-primary/25 bg-primary/5 p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Scale className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="font-semibold text-foreground">Vista unificada</p>
+                  <p className="text-sm text-muted-foreground">
+                    Equivalencia orientativa de todas las monedas en {convertedOverall.currencyCode}.
+                  </p>
+                </div>
+              </div>
+              <SettlementDetail settlement={convertedOverall} allowMarkPaid={false} isEstimate />
             </div>
           ) : null}
           {settlements.map((settlement) => (
-            <div key={settlement.currencyCode} className="flex flex-col gap-4">
-              <p className="text-xs font-medium text-muted-foreground">{settlement.currencyCode}</p>
+            <section key={settlement.currencyCode} className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3 sm:px-5">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
+                    <WalletCards className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <h3 className="font-semibold text-foreground">Pagos en {settlement.currencyCode}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {settlement.transactions.length === 1
+                        ? "Solo falta 1 movimiento"
+                        : `Faltan ${settlement.transactions.length} movimientos`}
+                    </p>
+                  </div>
+                </div>
+                <Badge variant="secondary">{settlement.currencyCode}</Badge>
+              </div>
               <SettlementDetail
                 settlement={settlement}
                 allowMarkPaid={Boolean(groupId)}
@@ -223,7 +283,7 @@ export function SettlementCard({
                 isAdmin={isAdmin}
                 onPaid={onPaid}
               />
-            </div>
+            </section>
           ))}
         </div>
       )}
@@ -239,6 +299,7 @@ function SettlementDetail({
   currentUserId,
   isAdmin = false,
   onPaid,
+  isEstimate = false,
 }: {
   settlement: CurrencySettlement;
   allowMarkPaid: boolean;
@@ -247,29 +308,20 @@ function SettlementDetail({
   currentUserId?: string | undefined;
   isAdmin?: boolean;
   onPaid?: (() => Promise<void> | void) | undefined;
+  isEstimate?: boolean;
 }) {
-  return (
-    <>
-      <ul className="flex flex-col gap-2">
-        {settlement.balances.map((balance) => (
-          <li key={balance.userId} className="flex items-center justify-between gap-2 text-sm">
-            <AliasLink userId={balance.userId} alias={balance.alias} hasLeftGroup={balance.hasLeftGroup} />
-            <Badge variant={balance.netCents > 0 ? "success" : "destructive"}>
-              {balance.netCents > 0 ? `le deben ${toAmount(balance.netCents)}` : `debe ${toAmount(balance.netCents)}`}{" "}
-              {settlement.currencyCode}
-            </Badge>
-          </li>
-        ))}
-      </ul>
+  const creditorCount = settlement.balances.filter((balance) => balance.netCents > 0).length;
+  const debtorCount = settlement.balances.filter((balance) => balance.netCents < 0).length;
 
+  return (
+    <div className={isEstimate ? "flex flex-col gap-4" : "flex flex-col gap-4 p-4 sm:p-5"}>
       {settlement.transactions.length > 0 ? (
-        <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-          <p className="text-xs font-medium text-muted-foreground">
-            {settlement.transactions.length === 1
-              ? "1 pago liquida todas las deudas"
-              : `${settlement.transactions.length} pagos liquidan todas las deudas`}
-          </p>
-          <ul className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <HandCoins className="h-4 w-4 text-primary" aria-hidden="true" />
+            <p className="text-sm font-semibold text-foreground">{isEstimate ? "Así quedarían las cuentas" : "Qué pagos hay que hacer"}</p>
+          </div>
+          <ol className="flex flex-col gap-3">
             {settlement.transactions.map((transaction, index) => {
               const canMarkPaid =
                 allowMarkPaid &&
@@ -278,35 +330,70 @@ function SettlementDetail({
               return (
                 <li
                   key={`${transaction.fromUserId}-${transaction.toUserId}-${index}`}
-                  className="flex flex-wrap items-center gap-2 text-sm"
+                  className="rounded-xl border border-border bg-background/65 p-4"
                 >
-                  <AliasLink
-                    userId={transaction.fromUserId}
-                    alias={transaction.fromAlias}
-                    hasLeftGroup={transaction.fromHasLeftGroup}
-                  />
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                  <AliasLink userId={transaction.toUserId} alias={transaction.toAlias} hasLeftGroup={transaction.toHasLeftGroup} />
-                  <span className="font-medium text-foreground">
-                    {toAmount(transaction.amountCents)} {settlement.currencyCode}
-                  </span>
-                  {canMarkPaid ? (
-                    <MarkPaidButton
-                      groupId={groupId}
-                      subgroupId={subgroupId}
-                      currencyCode={settlement.currencyCode}
-                      transaction={transaction}
-                      onPaid={async () => {
-                        await onPaid?.();
-                      }}
-                    />
-                  ) : null}
+                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
+                      <div className="min-w-0 text-sm">
+                        <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Paga</p>
+                        <AliasLink
+                          userId={transaction.fromUserId}
+                          alias={transaction.fromAlias}
+                          hasLeftGroup={transaction.fromHasLeftGroup}
+                        />
+                      </div>
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0 text-right text-sm">
+                        <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Recibe</p>
+                        <AliasLink userId={transaction.toUserId} alias={transaction.toAlias} hasLeftGroup={transaction.toHasLeftGroup} />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 border-t border-border pt-3 sm:min-w-36 sm:items-end sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                      <span className="text-xl font-bold tracking-tight text-foreground">
+                        {formatMoney(transaction.amountCents, settlement.currencyCode)}
+                      </span>
+                      {canMarkPaid ? (
+                        <MarkPaidButton
+                          groupId={groupId}
+                          subgroupId={subgroupId}
+                          currencyCode={settlement.currencyCode}
+                          transaction={transaction}
+                          onPaid={async () => {
+                            await onPaid?.();
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
                 </li>
               );
             })}
-          </ul>
+          </ol>
         </div>
       ) : null}
-    </>
+
+      <details className="group rounded-xl bg-muted/45 px-4 py-3">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center gap-2">
+            <Scale className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Ver balance por persona
+            <span className="font-normal text-muted-foreground">({creditorCount} a favor · {debtorCount} deben)</span>
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <ul className="mt-3 flex flex-col divide-y divide-border border-t border-border pt-1">
+          {settlement.balances.map((balance) => (
+            <li key={balance.userId} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+              <AliasLink userId={balance.userId} alias={balance.alias} hasLeftGroup={balance.hasLeftGroup} />
+              <span className={balance.netCents > 0 ? "font-semibold text-success" : "font-semibold text-destructive"}>
+                {balance.netCents > 0 ? "+" : "−"}{formatMoney(balance.netCents, settlement.currencyCode)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
   );
 }
