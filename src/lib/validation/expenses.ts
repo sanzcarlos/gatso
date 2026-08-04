@@ -44,6 +44,8 @@ export const createExpenseSchema = z.object({
     .toUpperCase()
     .length(3, "El codigo de moneda debe tener 3 letras (ISO 4217)"),
   description: z.string().trim().min(1, "La descripcion es obligatoria").max(280),
+  /** Comentario/nota libre opcional (ej. detalle del gasto, o el campo "Notes" importado de Splitwise). */
+  notes: z.string().trim().max(2000, "El comentario no puede superar 2000 caracteres").optional(),
   expenseDate: z.iso.date(),
   subgroupId: z.string().uuid().optional(),
   split: splitSchema,

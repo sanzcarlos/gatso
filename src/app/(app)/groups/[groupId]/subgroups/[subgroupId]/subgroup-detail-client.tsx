@@ -40,6 +40,7 @@ interface ExpenseRow {
     amount: string;
     currencyCode: string;
     description: string;
+    notes: string | null;
     expenseDate: string;
     splitMethod: "equal" | "percentage" | "fixed";
     createdBy: string;
@@ -189,6 +190,7 @@ export default function SubgroupDetailClient({
         amount: pending.payload.amount,
         currencyCode: pending.payload.currencyCode,
         description: pending.payload.description,
+        notes: pending.payload.notes ?? null,
         expenseDate: pending.payload.expenseDate,
         splitMethod: pending.payload.split.method,
         createdBy: currentUserId,
@@ -336,6 +338,7 @@ export default function SubgroupDetailClient({
           amount: expense.amount,
           currencyCode: expense.currencyCode,
           description: expense.description,
+          notes: expense.notes,
           expenseDate: expense.expenseDate,
           payerAlias,
           payerId: expense.payerId,

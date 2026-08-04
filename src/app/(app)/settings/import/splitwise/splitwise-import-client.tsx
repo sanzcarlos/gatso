@@ -532,9 +532,13 @@ export default function SplitwiseImportClient() {
             <div className="flex flex-col gap-1 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">Datos que Gatso no importa:</p>
               <p>{preview.unsupportedDataCounts.withReceipts} gastos con recibo adjunto</p>
-              <p>{preview.unsupportedDataCounts.withComments} gastos con comentarios</p>
+              <p>{preview.unsupportedDataCounts.withComments} gastos con hilo de comentarios/discusion</p>
               <p>{preview.unsupportedDataCounts.recurring} series recurrentes (se importa cada gasto ya generado, no la recurrencia en si)</p>
               <p>Las categorias de Splitwise tampoco se importan (Gatso no tiene un concepto equivalente).</p>
+              <p className="text-foreground">
+                Las notas de cada gasto (campo "Detalles" en Splitwise) si se importan, como comentario del gasto en
+                Gatso.
+              </p>
             </div>
           </CardContent>
         </Card>

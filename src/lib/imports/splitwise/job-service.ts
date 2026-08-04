@@ -218,6 +218,19 @@ async function processSingleExpense(job: ImportJob, expense: SplitwiseExpense): 
 
   const description = expense.description?.trim() || "Gasto importado de Splitwise";
   const expenseDate = expense.date.slice(0, 10);
+  /**
+   * Backlog: "importar los gastos con comentarios [...] definir un campo
+   * comentario en la parte de gastos o se omite el comentario de
+   * Splitwise". Se elige la primera opcion: `expenses.notes` (Gatso)
+   * recibe el campo `details` de Splitwise (las notas que la persona
+   * escribio al crear el gasto alli, ya presentes en la respuesta de
+   * `get_expenses` sin llamadas adicionales). Los comentarios de
+   * discusion reales (hilo de `comments`, contados en la vista previa
+   * como `unsupportedDataCounts.withComments`) siguen sin importarse:
+   * requeririan una llamada HTTP extra por gasto a la API de Splitwise,
+   * coste que no se considera justificado frente al beneficio.
+   */
+  const notes = expense.details?.trim() || undefined;
 
   if (payers.length === 1) {
     const mappingKey = String(expense.id);
@@ -238,6 +251,7 @@ async function processSingleExpense(job: ImportJob, expense: SplitwiseExpense): 
           amount: centsToAmount(totalCents),
           currencyCode: expense.currency_code,
           description,
+          notes,
           expenseDate,
           split,
         },
@@ -280,6 +294,7 @@ async function processSingleExpense(job: ImportJob, expense: SplitwiseExpense): 
           amount: centsToAmount(sub.amountCents),
           currencyCode: expense.currency_code,
           description: `${description} (parte pagada por este usuario)`,
+          notes,
           expenseDate,
           split: sharesToFixedSplit(sub.shares),
         },

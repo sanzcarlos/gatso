@@ -8,6 +8,7 @@ import { AMOUNT_REGEX } from "@/lib/validation/expenses";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -81,6 +82,7 @@ export function ExpenseFormDialog({
   const [amount, setAmount] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EUR");
   const [description, setDescription] = useState("");
+  const [notes, setNotes] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [payerId, setPayerId] = useState<string>(members[0]?.userId ?? "");
   const [subgroupId, setSubgroupId] = useState<string>(lockedSubgroupId ?? "none");
@@ -131,6 +133,7 @@ export function ExpenseFormDialog({
           amount: string;
           currencyCode: string;
           description: string;
+          notes: string | null;
           expenseDate: string;
           payerId: string;
           subgroupId: string | null;
@@ -148,6 +151,7 @@ export function ExpenseFormDialog({
         setAmount(expense.amount);
         setCurrencyCode(expense.currencyCode);
         setDescription(expense.description);
+        setNotes(expense.notes ?? "");
         setExpenseDate(expense.expenseDate);
         setPayerId(expense.payerId);
         setSubgroupId(lockedSubgroupId ?? expense.subgroupId ?? "none");
@@ -222,6 +226,7 @@ export function ExpenseFormDialog({
   function resetForm() {
     setAmount("");
     setDescription("");
+    setNotes("");
     setMethod("equal");
     setSubgroupId("none");
   }
@@ -255,6 +260,7 @@ export function ExpenseFormDialog({
       amount,
       currencyCode,
       description,
+      notes: notes.trim() || undefined,
       expenseDate,
       payerId,
       subgroupId: effectiveSubgroupId,
@@ -376,6 +382,17 @@ export function ExpenseFormDialog({
                 placeholder="Cena del sabado"
                 maxLength={280}
                 required
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="expense-notes">Comentario (opcional)</Label>
+              <Textarea
+                id="expense-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Notas adicionales sobre este gasto"
+                maxLength={2000}
               />
             </div>
 

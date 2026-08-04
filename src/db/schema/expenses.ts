@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, numeric, date, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, numeric, date, text, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { groups } from "./groups";
 import { subgroups } from "./subgroups";
 import { users } from "./users";
@@ -42,6 +42,13 @@ export const expenses = pgTable(
       .notNull()
       .references(() => currencies.code),
     description: varchar("description", { length: 280 }).notNull(),
+    /**
+     * Comentario/nota libre opcional del gasto (ej. detalle de que se
+     * compro, o el campo "Notes" de un gasto importado de Splitwise, ver
+     * `src/lib/imports/splitwise/job-service.ts`). Distinto de
+     * `description` (obligatoria, es el titulo corto del gasto).
+     */
+    notes: text("notes"),
     expenseDate: date("expense_date").notNull(),
     splitMethod: splitMethodEnum("split_method").notNull().default("equal"),
     createdBy: uuid("created_by")

@@ -19,6 +19,7 @@ export interface SummaryExpense {
   amount: string;
   currencyCode: string;
   description: string;
+  notes?: string | null;
   expenseDate: string;
   payerAlias: string;
   payerId?: string;
@@ -347,5 +348,5 @@ function MetricButton({ title, value, detail, icon, tone, onClick }: { title: st
 }
 
 function ExpenseRow({ expense, showStatus = false }: { expense: SummaryExpense; showStatus?: boolean }) {
-  return <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><ReceiptText className="h-5 w-5" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold">{expense.description}</p>{showStatus ? <Badge variant={statusVariant(expense)}>{statusLabel(expense)}</Badge> : expense.pending ? <Badge variant="warning">Pendiente</Badge> : null}</div><p className="truncate text-xs text-muted-foreground">{expense.payerAlias} · {expense.expenseDate}</p></div><p className="shrink-0 font-semibold tabular-nums">{formatAmount(expense.amount, expense.currencyCode)}</p></div>;
+  return <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><ReceiptText className="h-5 w-5" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold">{expense.description}</p>{showStatus ? <Badge variant={statusVariant(expense)}>{statusLabel(expense)}</Badge> : expense.pending ? <Badge variant="warning">Pendiente</Badge> : null}</div><p className="truncate text-xs text-muted-foreground">{expense.payerAlias} · {expense.expenseDate}</p>{showStatus && expense.notes ? <p className="mt-0.5 truncate text-xs text-muted-foreground" title={expense.notes}>💬 {expense.notes}</p> : null}</div><p className="shrink-0 font-semibold tabular-nums">{formatAmount(expense.amount, expense.currencyCode)}</p></div>;
 }

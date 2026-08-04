@@ -30,7 +30,14 @@ export interface ImportPreview {
   paymentCount: number;
   deletedCount: number;
   multiPayerExpenseCount: number;
-  /** Datos que Splitwise tiene pero Gatso no puede representar (backlog: "nunca se descartaran en silencio"). */
+  /**
+   * Datos que Splitwise tiene pero Gatso no puede representar (backlog:
+   * "nunca se descartaran en silencio"). `withComments` cuenta gastos con
+   * hilo de comentarios/discusion (`comments_count` > 0): NO se
+   * importan (requeririan una llamada HTTP extra por gasto). Distinto de
+   * las notas propias del gasto (campo `details` de Splitwise), que SI
+   * se importan en `expenses.notes` de Gatso (ver `job-service.ts`).
+   */
   unsupportedDataCounts: { withReceipts: number; withComments: number; recurring: number };
   /** `true` si la vista previa se calculo sobre un subconjunto (se alcanzo el limite de paginas de seguridad). */
   truncated: boolean;
