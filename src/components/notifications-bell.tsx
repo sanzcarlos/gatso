@@ -35,6 +35,9 @@ interface NotificationItem {
  */
 export function NotificationsBell() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [open, setOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -42,6 +45,8 @@ export function NotificationsBell() {
     if (response.ok) {
       const data = await response.json();
       setNotifications(data.notifications ?? []);
+      setNextCursor(data.nextCursor ?? null);
+      setUnreadCount(data.unreadCount ?? 0);
     }
   }, []);
 
@@ -49,7 +54,22 @@ export function NotificationsBell() {
     load();
   }, [load]);
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  async function handleLoadMore() {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const response = await apiFetch(`/api/notifications?cursor=${encodeURIComponent(nextCursor)}`);
+      if (!response.ok) {
+        toast.error("No se pudieron cargar mas notificaciones");
+        return;
+      }
+      const data = await response.json();
+      setNotifications((current) => [...current, ...(data.notifications ?? [])]);
+      setNextCursor(data.nextCursor ?? null);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   async function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
@@ -125,6 +145,19 @@ export function NotificationsBell() {
             </DropdownMenuItem>
           ))
         )}
+        {nextCursor ? (
+          <>
+            <DropdownMenuSeparator />
+            <button
+              type="button"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="w-full px-2 py-1.5 text-center text-xs font-normal text-primary hover:underline disabled:opacity-50"
+            >
+              {loadingMore ? "Cargando..." : "Cargar mas"}
+            </button>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
