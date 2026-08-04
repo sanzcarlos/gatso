@@ -5,7 +5,9 @@
 
 ## Estado actual
 
-**Fase completada: Fase 9 — Balances y liquidacion.**
+**Fase completada: Fase 9 — Balances y liquidacion.** Ver tambien "Backlog
+general priorizado" mas abajo: la prioridad media (paginacion por cursor,
+retencion/limpieza y rate limiting adicional) esta completada.
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
@@ -1776,15 +1778,97 @@ gastos, auditoria inmutable, monedas, notificaciones y PWA/offline. Se
 recomienda Postgres aislado para integracion y una suite E2E contra un build
 de produccion.
 
-### Prioridad media - escalabilidad y operacion
+### Prioridad media - escalabilidad y operacion (completado)
 
-- Anadir paginacion por cursor a gastos y notificaciones; paginacion y
-  filtros por accion/entidad al visor de auditoria (ahora limitado a 100).
-- Definir retencion y limpieza para `auth_attempts`, notificaciones leidas,
-  tipos de cambio antiguos y caches locales, sin borrar auditoria ni datos
-  financieros necesarios.
-- Evaluar rate limiting para registro, creacion/aceptacion de invitaciones y
-  union a grupos, evitando canales de enumeracion.
+#### Paginacion por cursor en gastos, notificaciones y auditoria
+
+- **Nuevo `src/lib/pagination.ts`**: helpers genericos `encodeCursor`/
+  `decodeCursor` (cursor opaco en base64url) y `clampLimit`/`Page<T>`,
+  reutilizados por los tres casos siguientes. Es la primera paginacion
+  por cursor del proyecto (antes no existia ninguna, ni por cursor ni por
+  offset: todas las listas se devolvian completas).
+- **`listExpenses`** (`src/lib/expenses/service.ts`): keyset sobre
+  `(expenseDate, createdAt, id)` (mismo orden que el `ORDER BY` ya
+  existente), `GET /api/groups/:groupId/expenses` acepta `?cursor=`/
+  `?limit=` y devuelve `{ expenses, nextCursor }`. El frontend
+  (`group-detail-client.tsx`, `subgroup-detail-client.tsx`) usa un nuevo
+  helper `src/lib/expenses/fetch-all.ts` que recorre las paginas de forma
+  transparente (limite de seguridad 50 paginas) para no romper la
+  busqueda/filtros ya existentes en `GroupSummaryCard`, que esperan la
+  lista completa.
+- **`listNotifications`** (`src/lib/notifications/service.ts`): keyset
+  sobre `(createdAt, id)`; nuevo `countUnreadNotifications` independiente
+  de la paginacion (antes el contador de no leidas se calculaba sobre el
+  array cargado, que ahora es solo la primera pagina). `GET
+  /api/notifications` devuelve `{ notifications, nextCursor, unreadCount
+  }`. `NotificationsBell` anade un boton "Cargar mas".
+- **`getGroupAuditLog`/`getPlatformAuditLog`** (`src/lib/audit/service.ts`):
+  keyset sobre `(createdAt, id)` + filtros `action`/`entityType` (antes
+  devolvian siempre los ultimos 100 eventos sin forma de ver mas ni de
+  acotar la busqueda). Rutas `GET .../audit-log` aceptan `?action=`,
+  `?entityType=`, `?cursor=`, `?limit=`. `GroupAuditLogCard` anade dos
+  `Select` de filtro y un boton "Cargar mas"; `getPlatformAuditLog` queda
+  con el mismo soporte a nivel de API pero sigue sin tener una pantalla
+  propia en el frontend (situacion preexistente, no es una regresion de
+  este cambio).
+
+#### Retencion y limpieza de datos operativos
+
+- **Nuevo `src/lib/retention/service.ts`**: `cleanupAuthAttempts` (borra
+  intentos de login/recuperacion mas antiguos que su periodo de
+  retencion, 90 dias por defecto), `cleanupReadNotifications` (solo
+  notificaciones YA LEIDAS, 60 dias por defecto; las no leidas nunca se
+  borran automaticamente), `cleanupOldExchangeRates` (borra tasas de
+  cambio superadas por una fila mas reciente de la misma moneda y mas
+  antiguas que su retencion, 90 dias por defecto; `getRateToEur` solo usa
+  siempre la ultima fila por moneda, y nunca se borra esa ultima fila
+  aunque sea antigua) y `cleanupRateLimitAttempts` (30 dias por defecto).
+  Todos los periodos son ajustables via `app_config` sin redeploy (mismo
+  patron que `expense_creation_rate_limit_seconds`). Deliberadamente
+  **nunca toca `audit_logs` ni datos financieros** (`expenses`,
+  `expense_shares`, `settlement_payments`).
+- `pnpm db:cleanup` (`src/db/cleanup.ts`, mismo patron que `db:seed`)
+  ejecuta `runRetentionCleanup` y muestra un resumen. Nuevo workflow
+  programado `.github/workflows/data-retention.yml` (cron semanal +
+  `workflow_dispatch`) lo ejecuta contra produccion, igual que
+  `db-migrate.yml`.
+- **Cache local de IndexedDB** (`src/lib/offline/db.ts`): nuevo
+  `pruneStaleCache()` borra entradas de `CACHE_STORE` (respuestas
+  cacheadas para el modo offline) de mas de 30 dias; se invoca al montar
+  `ServiceWorkerRegister` (ahora corre siempre, no solo en produccion
+  como el registro del SW). Nunca afecta a `QUEUE_STORE` (cola de gastos
+  pendientes de sincronizar).
+
+#### Rate limiting en registro, invitaciones y union a grupos
+
+- **Nueva tabla generica `rate_limit_attempts`** (`scope`+`key`+
+  `createdAt`, migracion `drizzle/0008_large_bruce_banner.sql`) y
+  `src/lib/rate-limit/service.ts` (`enforceKeyedRateLimit`/
+  `recordRateLimitAttempt`), deliberadamente separada de
+  `auth_attempts`/`auth-rate-limit.ts` (Fase 4, especifico de
+  login/recover con su propio enum) para que una accion nueva no
+  requiera migrar un enum.
+- **Registro** (`POST /api/auth/register`): limita intentos repetidos de
+  registrar el mismo alias (5 cada 15 min por defecto). No evita crear
+  muchos alias distintos rapidamente (no hay IP que limitar por diseno de
+  privacidad), pero anade friccion a probar un alias concreto.
+- **Creacion de invitaciones** (`createGroupInvitation`): limita por
+  usuario que las genera (20/hora por defecto), evita spam de enlaces de
+  invitacion.
+- **Aceptacion de invitaciones** (`acceptGroupInvitation`, ruta publica
+  sin sesion): al no haber ninguna identidad previa disponible sin
+  almacenar IP, se aplica un limite **global** a toda la accion (60/min
+  por defecto) para frenar un escaneo automatizado de tokens de 32
+  caracteres.
+- **Union a grupo por codigo** (`joinGroupByInviteCode`): limita por
+  usuario autenticado que intenta unirse (20 cada 15 min por defecto),
+  frena adivinar codigos sin bloquear a quien se une legitimamente a
+  varios grupos reales en poco tiempo.
+- Todos los limites configurables via `app_config`. `runRetentionCleanup`
+  tambien purga esta tabla nueva.
+- Verificado con `tsc --noEmit`, `vitest run` (53/53) y `next build` tras
+  cada uno de los cuatro cambios anteriores; migracion `0008` generada y
+  aplicada contra la base de datos de `.env.local`.
 
 ### Funcionalidad de producto pendiente
 
