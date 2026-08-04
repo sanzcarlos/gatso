@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Info, LogIn, LogOut, Menu, ShieldCheck, UserPlus, Users, UserRound } from "lucide-react";
+import { Info, LogIn, LogOut, Menu, ShieldCheck, UploadCloud, UserPlus, Users, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -49,6 +49,15 @@ export function SiteHeader({ session }: SiteHeaderProps) {
           {session ? (
             <Link href="/groups" className="rounded-lg px-3 py-2 font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
               Mis grupos
+            </Link>
+          ) : null}
+          {session ? (
+            <Link
+              href="/settings/import/splitwise"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <UploadCloud className="h-4 w-4" />
+              Importar
             </Link>
           ) : null}
           {session?.isPlatformAdmin ? (
@@ -102,6 +111,7 @@ export function SiteHeader({ session }: SiteHeaderProps) {
               {session ? (
                 <>
                   <DropdownMenuItem asChild><Link href="/groups" className="gap-2"><Users /> Mis grupos</Link></DropdownMenuItem>
+                  <DropdownMenuItem asChild><Link href="/settings/import/splitwise" className="gap-2"><UploadCloud /> Importar desde Splitwise</Link></DropdownMenuItem>
                   <DropdownMenuItem asChild><Link href={`/users/${session.userId}`} className="gap-2"><UserRound /> Mi perfil</Link></DropdownMenuItem>
                   {session.isPlatformAdmin ? (
                     <DropdownMenuItem asChild><Link href="/admin/currencies" className="gap-2"><ShieldCheck /> Administracion</Link></DropdownMenuItem>
