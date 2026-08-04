@@ -62,22 +62,20 @@ export function distributeEqually(totalCents: number, count: number): number[] {
 }
 
 /**
- * Reparte `totalCents` segun una lista de puntos base (deben sumar 10000
- * = 100%) usando el metodo del resto mayor (Hamilton) para que la suma de
- * las partes enteras resultantes sea exactamente `totalCents`, sin perder
- * ni anadir centimos por redondeo.
+ * Reparte `totalCents` proporcionalmente a una lista de pesos no
+ * negativos (no tienen por que sumar nada en particular) usando el
+ * metodo del resto mayor / Hamilton, garantizando que la suma de las
+ * partes enteras resultantes sea exactamente `totalCents`. Generalizacion
+ * de {@link distributeByBasisPoints} (que exige que los pesos sumen
+ * exactamente 10000); usada tambien por el mapeo de gastos multi-pagador
+ * de Splitwise (Fase 11, `src/lib/imports/splitwise/mapping.ts`), donde
+ * los "pesos" son importes en centimos de otro reparto, no puntos base.
  */
-export function distributeByBasisPoints(totalCents: number, basisPoints: number[]): number[] {
-  const totalBasisPoints = basisPoints.reduce((sum, bp) => sum + bp, 0);
-  if (totalBasisPoints !== 10000) {
-    throw new AppError(
-      400,
-      `Los porcentajes deben sumar 100% (suman ${(totalBasisPoints / 100).toFixed(2)}%)`,
-      "percentages_must_sum_to_100",
-    );
-  }
+export function distributeProportionally(totalCents: number, weights: number[]): number[] {
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  if (totalWeight === 0) return weights.map(() => 0);
 
-  const rawShares = basisPoints.map((bp) => (totalCents * bp) / 10000);
+  const rawShares = weights.map((weight) => (totalCents * weight) / totalWeight);
   const flooredShares = rawShares.map((share) => Math.floor(share));
   const allocated = flooredShares.reduce((sum, share) => sum + share, 0);
   const remainder = totalCents - allocated;
@@ -92,6 +90,24 @@ export function distributeByBasisPoints(totalCents: number, basisPoints: number[
     if (entry) result[entry.index] = (result[entry.index] ?? 0) + 1;
   }
   return result;
+}
+
+/**
+ * Reparte `totalCents` segun una lista de puntos base (deben sumar 10000
+ * = 100%) usando el metodo del resto mayor (Hamilton) para que la suma de
+ * las partes enteras resultantes sea exactamente `totalCents`, sin perder
+ * ni anadir centimos por redondeo.
+ */
+export function distributeByBasisPoints(totalCents: number, basisPoints: number[]): number[] {
+  const totalBasisPoints = basisPoints.reduce((sum, bp) => sum + bp, 0);
+  if (totalBasisPoints !== 10000) {
+    throw new AppError(
+      400,
+      `Los porcentajes deben sumar 100% (suman ${(totalBasisPoints / 100).toFixed(2)}%)`,
+      "percentages_must_sum_to_100",
+    );
+  }
+  return distributeProportionally(totalCents, basisPoints);
 }
 
 /** Valida que una lista de importes fijos (en centimos) sume exactamente el total. */
