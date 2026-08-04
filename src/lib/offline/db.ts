@@ -139,3 +139,40 @@ export async function updatePendingExpense(localId: string, patch: Partial<Pendi
     // Ignorado: ver comentario de getCache.
   }
 }
+
+const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Retencion/limpieza de la cache local (Backlog: "sin borrar auditoria ni
+ * datos financieros necesarios"). La cache de lectura (`CACHE_STORE`) no
+ * tenia ninguna expiracion: cada pantalla la sobrescribe en cada visita
+ * con conexion, pero si el usuario deja de abrir un grupo/subgrupo
+ * concreto la entrada correspondiente se queda para siempre en su
+ * IndexedDB. Se borra en segundo plano cualquier entrada mas antigua que
+ * `CACHE_MAX_AGE_MS`; nunca afecta a `QUEUE_STORE` (cola de gastos
+ * pendientes de sincronizar, que solo se borra al confirmarse el envio o
+ * al descartarla explicitamente el usuario).
+ */
+export async function pruneStaleCache(maxAgeMs: number = CACHE_MAX_AGE_MS): Promise<void> {
+  try {
+    const db = await openDb();
+    const cutoff = Date.now() - maxAgeMs;
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CACHE_STORE, "readwrite");
+      const store = tx.objectStore(CACHE_STORE);
+      const request = store.openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const record = cursor.value as CacheRecord<unknown>;
+        if (record.updatedAt < cutoff) cursor.delete();
+        cursor.continue();
+      };
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+      tx.oncomplete = () => resolve();
+    });
+  } catch {
+    // Ignorado: ver comentario de getCache.
+  }
+}

@@ -1,0 +1,46 @@
+name: Data Retention Cleanup
+
+# Aplica la politica de retencion/limpieza del backlog: borra intentos de
+# login/recuperacion antiguos, notificaciones ya leidas antiguas y tipos
+# de cambio historicos superados por una fila mas reciente de la misma
+# moneda (ver src/lib/retention/service.ts). Nunca toca audit_logs ni
+# datos financieros (expenses, expense_shares, settlement_payments).
+#
+# Se ejecuta semanalmente y tambien se puede lanzar a mano desde la
+# pestana "Actions". Requiere el secret DATABASE_URL (el mismo que usa
+# db-migrate.yml) apuntando a la base de datos de produccion.
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  cleanup:
+    name: Run retention cleanup
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run retention cleanup
+        # AUTH_SECRET no se usa para nada en este script (no firma ni
+        # verifica sesiones), pero src/lib/env.ts lo exige al cargar
+        # src/db (misma cadena de imports que db:seed). Se fija un valor
+        # ficticio, igual que hace ci.yml para `pnpm build`.
+        run: pnpm db:cleanup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: "retention-cleanup-not-used-for-auth-0000000000"

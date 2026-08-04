@@ -21,6 +21,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/db/seed.ts",
+    "db:cleanup": "tsx src/db/cleanup.ts",
     "icons:generate": "node scripts/generate-pwa-icons.mjs"
   },
   "dependencies": {
