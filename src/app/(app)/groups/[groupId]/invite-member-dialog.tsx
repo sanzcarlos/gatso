@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { UserPlus, Copy } from "lucide-react";
+import { UserPlus, Copy, Trash2 } from "lucide-react";
 
 interface Invitation {
   id: string;
@@ -40,6 +40,7 @@ export function InviteMemberDialog({
   const [open, setOpen] = useState(false);
   const [invitations, setInvitations] = useState<Invitation[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
   const [suggestedAlias, setSuggestedAlias] = useState(initialSuggestedAlias);
 
   const load = useCallback(async () => {
@@ -86,6 +87,25 @@ export function InviteMemberDialog({
   async function handleCopy(token: string) {
     await navigator.clipboard.writeText(inviteUrl(token)).catch(() => {});
     toast.success("Enlace copiado");
+  }
+
+  async function handleRevoke(invitationId: string) {
+    if (!window.confirm("¿Eliminar esta invitacion pendiente? El enlace dejara de funcionar.")) {
+      return;
+    }
+    setRevokingId(invitationId);
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/invitations/${invitationId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo eliminar la invitacion");
+        return;
+      }
+      toast.success("Invitacion eliminada");
+      await load();
+    } finally {
+      setRevokingId(null);
+    }
   }
 
   return (
@@ -147,17 +167,30 @@ export function InviteMemberDialog({
                         Caduca: {new Date(invitation.expiresAt).toLocaleString()}
                       </span>
                     </div>
-                    {!expired ? (
+                    <div className="flex items-center gap-1">
+                      {!expired ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopy(invitation.token)}
+                          aria-label="Copiar enlace de invitacion"
+                        >
+                          <Copy />
+                          Copiar
+                        </Button>
+                      ) : null}
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleCopy(invitation.token)}
-                        aria-label="Copiar enlace de invitacion"
+                        onClick={() => handleRevoke(invitation.id)}
+                        disabled={revokingId === invitation.id}
+                        aria-label="Eliminar invitacion"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       >
-                        <Copy />
-                        Copiar
+                        <Trash2 />
+                        {revokingId === invitation.id ? "Eliminando..." : "Eliminar"}
                       </Button>
-                    ) : null}
+                    </div>
                   </li>
                 );
               })}

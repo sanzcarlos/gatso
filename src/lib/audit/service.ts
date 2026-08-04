@@ -20,7 +20,8 @@ export type AuditEntityType =
   | "currency"
   | "settlement_payment"
   | "external_connection"
-  | "import_job";
+  | "import_job"
+  | "group_invitation";
 
 export type AuditAction = "create" | "update" | "delete";
 

@@ -84,6 +84,60 @@ export async function listGroupInvitations(groupId: string, actingUserId: string
     .orderBy(groupInvitations.createdAt);
 }
 
+/**
+ * Revoca (borra) una invitacion personal pendiente antes de que se use,
+ * para poder retirar un enlace generado por error o ya innecesario (ej.
+ * uno de los generados automaticamente al importar de Splitwise para un
+ * participante que ya no interesa invitar). Permitido a quien la creo o
+ * a un administrador del grupo -mismo criterio que editar/borrar un
+ * gasto (Fase 4)-, nunca a cualquier miembro sin relacion con ella.
+ *
+ * Solo se pueden revocar invitaciones sin usar: una ya aceptada es
+ * historico (la cuenta ya existe), no tiene sentido "revocarla" y
+ * `listGroupInvitations` tampoco la devuelve.
+ */
+export async function revokeGroupInvitation(groupId: string, actingUserId: string, invitationId: string) {
+  const membership = await requireMembership(groupId, actingUserId);
+
+  const [invitation] = await db
+    .select()
+    .from(groupInvitations)
+    .where(and(eq(groupInvitations.id, invitationId), eq(groupInvitations.groupId, groupId)))
+    .limit(1);
+  if (!invitation) {
+    throw new AppError(404, "Invitacion no encontrada", "invitation_not_found");
+  }
+  if (invitation.usedAt) {
+    throw new AppError(409, "Esta invitacion ya ha sido utilizada, no se puede revocar", "invitation_already_used");
+  }
+
+  const canRevoke = membership.role === "admin" || invitation.createdBy === actingUserId;
+  if (!canRevoke) {
+    throw new AppError(
+      403,
+      "Solo quien creo la invitacion o un administrador del grupo pueden revocarla",
+      "forbidden_invitation_revoke",
+    );
+  }
+
+  return db.transaction(async (tx) => {
+    const deleted = await tx.delete(groupInvitations).where(eq(groupInvitations.id, invitationId)).returning();
+    const removed = deleted[0];
+    if (!removed) throw new AppError(404, "Invitacion no encontrada", "invitation_not_found");
+
+    await recordAuditLog(tx, {
+      actorUserId: actingUserId,
+      action: "delete",
+      entityType: "group_invitation",
+      entityId: removed.id,
+      groupId,
+      beforeData: removed,
+    });
+
+    return removed;
+  });
+}
+
 function assertInvitationValid(invitation: typeof groupInvitations.$inferSelect) {
   if (invitation.usedAt) {
     throw new AppError(410, "Esta invitacion ya ha sido utilizada", "invitation_already_used");
