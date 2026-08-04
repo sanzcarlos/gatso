@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowRight, Check, ChevronDown, CircleCheck, HandCoins, Scale, WalletCards } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, HandCoins, Scale, WalletCards } from "lucide-react";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +20,8 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SETTLEMENT_METHOD_LABEL, SETTLEMENT_PAYMENT_METHODS, type SettlementPaymentMethod } from "@/lib/settlements/methods";
+
+const SETTLEMENT_PAGE_SIZE = 5;
 
 export interface SettlementBalance {
   userId: string;
@@ -213,24 +214,48 @@ export function SettlementCard({
   isAdmin?: boolean;
   onPaid?: (() => Promise<void> | void) | undefined;
 }) {
+  const [page, setPage] = useState(1);
   const pendingPayments = settlements?.reduce((total, settlement) => total + settlement.transactions.length, 0) ?? 0;
+  const paginatedSettlements = useMemo(() => {
+    if (!settlements) return [];
+
+    const firstItem = (page - 1) * SETTLEMENT_PAGE_SIZE;
+    const lastItem = firstItem + SETTLEMENT_PAGE_SIZE;
+    let transactionIndex = 0;
+
+    return settlements.flatMap((settlement) => {
+      const transactions = settlement.transactions.filter(() => {
+        const isOnCurrentPage = transactionIndex >= firstItem && transactionIndex < lastItem;
+        transactionIndex += 1;
+        return isOnCurrentPage;
+      });
+
+      return transactions.length > 0 ? [{ ...settlement, transactions }] : [];
+    });
+  }, [page, settlements]);
+  const pageCount = Math.max(1, Math.ceil(pendingPayments / SETTLEMENT_PAGE_SIZE));
+
+  useEffect(() => {
+    setPage((currentPage) => Math.min(currentPage, pageCount));
+  }, [pageCount]);
 
   return (
-    <CollapsibleCard
-      title="Liquidación"
-      description="Los pagos necesarios para dejar las cuentas a cero."
-      headerExtra={
-        settlements !== null && pendingPayments > 0 ? (
+    <section className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-foreground">Pagos pendientes</h2>
+          <p className="text-sm text-muted-foreground">Los pagos necesarios para dejar las cuentas a cero.</p>
+        </div>
+        {settlements !== null && pendingPayments > 0 ? (
           <Badge variant="warning">{pendingPayments} {pendingPayments === 1 ? "pago" : "pagos"}</Badge>
-        ) : null
-      }
-    >
+        ) : null}
+      </div>
       {settlements === null ? (
         <div className="flex flex-col gap-3" aria-label="Cargando liquidación">
           <Skeleton className="h-20 w-full rounded-xl" />
           <Skeleton className="h-32 w-full rounded-xl" />
         </div>
-      ) : settlements.length === 0 ? (
+      ) : pendingPayments === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-success/20 bg-success/5 px-4 py-8 text-center">
           <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-success/15 text-success">
             <CircleCheck className="h-6 w-6" aria-hidden="true" />
@@ -256,7 +281,7 @@ export function SettlementCard({
               <SettlementDetail settlement={convertedOverall} allowMarkPaid={false} isEstimate />
             </div>
           ) : null}
-          {settlements.map((settlement) => (
+          {paginatedSettlements.map((settlement) => (
             <section key={settlement.currencyCode} className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
               <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3 sm:px-5">
                 <div className="flex items-center gap-3">
@@ -285,9 +310,38 @@ export function SettlementCard({
               />
             </section>
           ))}
+          {pageCount > 1 ? (
+            <nav className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4" aria-label="Paginación de pagos pendientes">
+              <p className="text-sm text-muted-foreground">
+                {pendingPayments} pagos · Página {page} de {pageCount}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+                >
+                  <ChevronLeft />
+                  Anterior
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= pageCount}
+                  onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))}
+                >
+                  Siguiente
+                  <ChevronRight />
+                </Button>
+              </div>
+            </nav>
+          ) : null}
         </div>
       )}
-    </CollapsibleCard>
+    </section>
   );
 }
 
