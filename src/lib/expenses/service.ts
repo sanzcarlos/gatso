@@ -104,7 +104,24 @@ async function findExpenseByClientRequestId(groupId: string, clientRequestId: st
   return expense ?? null;
 }
 
-export async function createExpense(groupId: string, actingUserId: string, input: CreateExpenseInput) {
+export interface CreateExpenseOptions {
+  /**
+   * Omite el rate limit de creacion de gastos (Fase 11: el job de
+   * importacion desde Splitwise crea muchos gastos en rafaga a nombre de
+   * quien ejecuta la importacion; aplicarle el limite de "1 gasto cada N
+   * segundos" pensado para uso interactivo normal romperia cualquier
+   * importacion con mas de un gasto). Nunca se expone via ninguna ruta
+   * HTTP/schema publico; solo lo usa `src/lib/imports/splitwise/job-service.ts`.
+   */
+  skipRateLimit?: boolean;
+}
+
+export async function createExpense(
+  groupId: string,
+  actingUserId: string,
+  input: CreateExpenseInput,
+  options?: CreateExpenseOptions,
+) {
   await requireMembership(groupId, actingUserId);
 
   if (input.clientRequestId) {
@@ -130,7 +147,9 @@ export async function createExpense(groupId: string, actingUserId: string, input
 
   try {
     return await db.transaction(async (tx) => {
-      await enforceExpenseCreationRateLimit(tx, actingUserId);
+      if (!options?.skipRateLimit) {
+        await enforceExpenseCreationRateLimit(tx, actingUserId);
+      }
 
       const [expense] = await tx
         .insert(expenses)
