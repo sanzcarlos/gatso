@@ -12,7 +12,18 @@ import type { Tx } from "@/db";
 
 export const SPLITWISE_PROVIDER = "splitwise";
 
-export type ImportEntityType = "group" | "user" | "expense" | "payment";
+/**
+ * "user_invitation" (Fase 11 ampliada): marca que ya se genero una
+ * invitacion personal pendiente para un participante de Splitwise sin
+ * cuenta Gatso todavia (backlog: "el administrador del grupo podra ver
+ * el enlace de invitacion para poder compartirlo"). `gatsoId` en este
+ * caso es el id de la fila de `group_invitations`, no un usuario real
+ * (todavia no existe). Se consulta antes de generar una invitacion nueva
+ * para no duplicar enlaces si varios gastos referencian al mismo
+ * participante sin mapear. Distinto de "user" (mapeo real ya resuelto,
+ * `gatsoId` = id de un usuario existente).
+ */
+export type ImportEntityType = "group" | "user" | "user_invitation" | "expense" | "payment";
 
 export async function getEntityMapping(entityType: ImportEntityType, externalId: string, client: Tx | typeof db = db) {
   const [row] = await client

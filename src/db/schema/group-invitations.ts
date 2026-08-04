@@ -13,6 +13,15 @@ import { users } from "./users";
  * grupo, Fase 11), mostrado como valor prellenado -pero editable- en el
  * formulario de aceptacion. Nunca crea la cuenta por si solo: la persona
  * invitada sigue eligiendo su propio alias y contrasena al aceptar.
+ *
+ * `externalProvider`/`externalParticipantId` (opcional, Fase 11): cuando
+ * la invitacion se genero automaticamente durante una importacion (ej.
+ * un participante de Splitwise sin cuenta Gatso todavia, ver
+ * `src/lib/imports/splitwise/job-service.ts`), guardan a que persona
+ * externa corresponde. Al aceptarse, `acceptGroupInvitation` registra la
+ * correspondencia en `external_entity_mappings` (entityType "user") para
+ * que una nueva ejecucion de la importacion resuelva automaticamente a
+ * ese participante sin necesidad de remapearlo a mano.
  */
 export const groupInvitations = pgTable("group_invitations", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -24,6 +33,8 @@ export const groupInvitations = pgTable("group_invitations", {
     .notNull()
     .references(() => users.id),
   suggestedAlias: varchar("suggested_alias", { length: 64 }),
+  externalProvider: varchar("external_provider", { length: 32 }),
+  externalParticipantId: varchar("external_participant_id", { length: 64 }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
   usedByUserId: uuid("used_by_user_id").references(() => users.id),

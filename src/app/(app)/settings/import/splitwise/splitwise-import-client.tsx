@@ -607,11 +607,11 @@ export default function SplitwiseImportClient() {
             <CardDescription>
               El desplegable incluye a cualquier persona con la que ya compartes otro grupo en Gatso. Si eliges a
               alguien que aun no es miembro de "{targetGroupName}", se anadira automaticamente al confirmar. Para
-              quien todavia no tenga cuenta en Gatso, usa "Invitar" junto a su nombre: genera un enlace personal (con
-              su nombre de Splitwise sugerido, pero editable) para que cree su propia cuenta; cuando la acepte,
-              pulsa "Actualizar lista" para poder mapearlo. Ningun emparejamiento se hace por nombre automaticamente:
-              revisa cada persona. Los gastos con participantes sin mapear no bloquean el resto de la importacion
-              (se registran como error individual en el informe).
+              quien todavia no tenga cuenta en Gatso, puedes usar "Invitar" junto a su nombre ahora mismo, o dejarlo
+              sin mapear: durante la importacion se generara automaticamente una invitacion pendiente para cada
+              participante sin cuenta (visible y compartible desde "Ver invitaciones pendientes" en el paso 5).
+              Cuando la acepte, vuelve a importar el mismo grupo de Splitwise para completar sus gastos. Ningun
+              emparejamiento se hace por nombre automaticamente: revisa cada persona.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -692,9 +692,21 @@ export default function SplitwiseImportClient() {
               </div>
             ) : null}
             {job.targetGroupId ? (
-              <Link href={`/groups/${job.targetGroupId}`} className="text-primary underline-offset-4 hover:underline">
-                Ver grupo en Gatso
-              </Link>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link href={`/groups/${job.targetGroupId}`} className="text-primary underline-offset-4 hover:underline">
+                  Ver grupo en Gatso
+                </Link>
+                {jobErrors.length > 0 ? (
+                  <InviteMemberDialog groupId={job.targetGroupId} triggerLabel="Ver invitaciones pendientes" />
+                ) : null}
+              </div>
+            ) : null}
+            {jobErrors.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Los participantes sin cuenta Gatso todavia tienen una invitacion pendiente generada automaticamente:
+                compartela desde "Ver invitaciones pendientes" y vuelve a importar cuando la acepten para completar
+                sus gastos.
+              </p>
             ) : null}
             {reconciliation ? (
               <div className="mt-2 flex flex-col gap-1 rounded-md border border-border p-3">

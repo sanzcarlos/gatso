@@ -43,7 +43,7 @@ export interface ImportPreview {
   truncated: boolean;
 }
 
-function displayNameFor(user: SplitwiseUser | null | undefined): string {
+export function displayNameFor(user: SplitwiseUser | null | undefined): string {
   if (!user) return "Usuario de Splitwise";
   const name = [user.first_name, user.last_name].filter(Boolean).join(" ").trim();
   return name || "Usuario de Splitwise";

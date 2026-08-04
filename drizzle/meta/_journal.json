@@ -92,6 +92,13 @@
       "when": 1785848868758,
       "tag": "0012_orange_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785849327598,
+      "tag": "0013_military_chamber",
+      "breakpoints": true
     }
   ]
 }

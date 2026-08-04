@@ -1,6 +1,6 @@
 import { customAlphabet } from "nanoid";
 import { and, count, eq, isNull } from "drizzle-orm";
-import { db, groupInvitations, groups, memberships, users } from "@/db";
+import { db, groupInvitations, groups, memberships, users, externalEntityMappings } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { createUserWithAlias } from "@/lib/users/service";
@@ -19,6 +19,13 @@ export const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
 const TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
 const generateToken = customAlphabet(TOKEN_ALPHABET, 32);
 
+export interface CreateGroupInvitationOptions {
+  suggestedAlias?: string | null;
+  /** Fase 11 ampliada: vincula la invitacion a un participante externo (ej. Splitwise) para poder auto-resolverlo al aceptarse. */
+  externalProvider?: string | null;
+  externalParticipantId?: string | null;
+}
+
 /**
  * Invitacion personal a un grupo: a diferencia del `invite_code` publico
  * (compartible libremente, sin caducidad), esta genera un enlace unico de
@@ -34,10 +41,13 @@ const generateToken = customAlphabet(TOKEN_ALPHABET, 32);
 export async function createGroupInvitation(
   groupId: string,
   actingUserId: string,
-  suggestedAlias?: string | null,
+  options: CreateGroupInvitationOptions | string | null = {},
 ) {
   await requireMembership(groupId, actingUserId);
   await enforceInvitationCreateRateLimit(actingUserId);
+
+  // Compatibilidad: admite el uso previo (tercer parametro = suggestedAlias suelto).
+  const normalized: CreateGroupInvitationOptions = typeof options === "string" || options === null ? { suggestedAlias: options } : options;
 
   const [invitation] = await db
     .insert(groupInvitations)
@@ -45,7 +55,9 @@ export async function createGroupInvitation(
       groupId,
       token: generateToken(),
       createdBy: actingUserId,
-      suggestedAlias: suggestedAlias?.trim() || null,
+      suggestedAlias: normalized.suggestedAlias?.trim() || null,
+      externalProvider: normalized.externalProvider ?? null,
+      externalParticipantId: normalized.externalParticipantId ?? null,
       expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
     })
     .returning();
@@ -164,6 +176,30 @@ export async function acceptGroupInvitation(token: string, alias: string, passwo
         .update(groupInvitations)
         .set({ usedAt: new Date(), usedByUserId: user.id })
         .where(eq(groupInvitations.id, invitation.id));
+
+      /**
+       * Fase 11 ampliada: si esta invitacion se genero automaticamente
+       * para un participante externo sin cuenta Gatso (ej. Splitwise,
+       * ver `job-service.ts`), registra la correspondencia externo <->
+       * usuario Gatso real ahora que ya existe. Asi, una nueva ejecucion
+       * de la importacion resuelve a esta persona automaticamente sin
+       * que el administrador tenga que remapearla a mano. Se usa
+       * `onConflictDoNothing` (mismo criterio que `recordEntityMapping`)
+       * por si el mismo participante ya quedo mapeado por otra via
+       * mientras la invitacion estaba pendiente.
+       */
+      if (invitation.externalProvider && invitation.externalParticipantId) {
+        await tx
+          .insert(externalEntityMappings)
+          .values({
+            provider: invitation.externalProvider,
+            entityType: "user",
+            externalId: invitation.externalParticipantId,
+            gatsoId: user.id,
+            createdByJobId: null,
+          })
+          .onConflictDoNothing();
+      }
 
       const sessionToken = await createSessionToken({ userId: user.id, alias: user.alias });
       await setSessionCookie(sessionToken);
