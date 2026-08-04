@@ -18,7 +18,7 @@ import {
 
 interface NotificationItem {
   id: string;
-  type: "expense_pending_validation";
+  type: "expense_pending_validation" | "settlement_payment_recorded";
   groupId: string | null;
   expenseId: string | null;
   message: string;
@@ -27,9 +27,11 @@ interface NotificationItem {
 }
 
 /**
- * Campana de notificaciones (Fase 4). Por ahora solo existe el tipo
+ * Campana de notificaciones (Fase 4). Tipos existentes:
  * "expense_pending_validation" (edicion de un gasto ajeno que requiere
- * validacion del creador original), pero el modelo es ampliable.
+ * validacion del creador original) y "settlement_payment_recorded" (otro
+ * implicado ha marcado como pagada una deuda de liquidacion, Fase 9 ampliada). El
+ * modelo es ampliable a mas tipos.
  */
 export function NotificationsBell() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);

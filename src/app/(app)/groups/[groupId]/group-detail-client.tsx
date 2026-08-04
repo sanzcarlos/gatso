@@ -402,6 +402,10 @@ export default function GroupDetailClient({
         participants={(members ?? []).map((member) => ({ userId: member.userId, alias: member.alias, role: member.role }))}
         settlements={settlements}
         convertedOverall={convertedOverall}
+        settlementGroupId={groupId}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        onSettlementPaid={load}
         subgroups={(subgroups ?? []).map((subgroup) => ({
           id: subgroup.id,
           name: subgroup.name,

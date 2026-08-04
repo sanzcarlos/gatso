@@ -16,7 +16,8 @@ export type AuditEntityType =
   | "subgroup"
   | "membership"
   | "subgroup_membership"
-  | "currency";
+  | "currency"
+  | "settlement_payment";
 
 export type AuditAction = "create" | "update" | "delete";
 

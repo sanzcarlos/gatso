@@ -1,8 +1,12 @@
-import { and, eq, inArray } from "drizzle-orm";
-import { db, expenses, expenseShares, memberships, users, groups } from "@/db";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import { db, expenses, expenseShares, memberships, users, groups, currencies, settlementPayments } from "@/db";
 import { requireMembership } from "@/lib/groups/service";
-import { parseAmountToCents } from "@/lib/money";
+import { parseAmountToCents, centsToAmount } from "@/lib/money";
 import { convertCents } from "@/lib/exchange-rates/service";
+import { recordAuditLog } from "@/lib/audit/service";
+import { createNotification } from "@/lib/notifications/service";
+import { AppError } from "@/lib/errors";
+import { SETTLEMENT_METHOD_LABEL, type SettlementPaymentMethod } from "./methods";
 import { minimizeTransactions } from "./optimize";
 import type { Balance } from "./optimize";
 
@@ -93,6 +97,31 @@ export async function getGroupSettlement(
     const currencyCode = currencyByExpenseId.get(s.expenseId);
     if (!currencyCode) continue;
     addNet(currencyCode, s.userId, -parseAmountToCents(s.shareAmount));
+  }
+
+  /**
+   * Fase 9 (ampliacion): las deudas ya marcadas como pagadas (`recordSettlementPayment`)
+   * se restan de los balances netos antes de recalcular el optimo, para que
+   * una transaccion ya saldada fuera de la app deje de aparecer como
+   * pendiente. Se aplican en el mismo ambito (grupo completo o subgrupo)
+   * con el que se calculo esta liquidacion.
+   */
+  const paymentCondition = subgroupId
+    ? and(eq(settlementPayments.groupId, groupId), eq(settlementPayments.subgroupId, subgroupId))
+    : and(eq(settlementPayments.groupId, groupId), isNull(settlementPayments.subgroupId));
+  const paymentRows = await db
+    .select({
+      fromUserId: settlementPayments.fromUserId,
+      toUserId: settlementPayments.toUserId,
+      amount: settlementPayments.amount,
+      currencyCode: settlementPayments.currencyCode,
+    })
+    .from(settlementPayments)
+    .where(paymentCondition);
+  for (const p of paymentRows) {
+    const amountCents = parseAmountToCents(p.amount);
+    addNet(p.currencyCode, p.fromUserId, amountCents);
+    addNet(p.currencyCode, p.toUserId, -amountCents);
   }
 
   const involvedUserIds = new Set<string>();
@@ -193,4 +222,92 @@ export async function getGroupSettlement(
   }
 
   return { baseCurrencyCode, settlements: sortedSettlements, convertedOverall };
+}
+
+export interface RecordSettlementPaymentInput {
+  subgroupId?: string | undefined;
+  fromUserId: string;
+  toUserId: string;
+  amountCents: number;
+  currencyCode: string;
+  method: SettlementPaymentMethod;
+}
+
+/**
+ * Registra que una transaccion sugerida por la liquidacion se ha efectuado
+ * realmente fuera de la app (Fase 9 ampliada). Solo los dos implicados en la deuda
+ * o un administrador del grupo pueden marcarla como pagada. Avisa al otro
+ * implicado (no al que registra el pago) mediante una notificacion que
+ * incluye el importe y el metodo utilizado.
+ */
+export async function recordSettlementPayment(
+  groupId: string,
+  actingUserId: string,
+  input: RecordSettlementPaymentInput,
+) {
+  const membership = await requireMembership(groupId, actingUserId);
+  if (membership.role !== "admin" && actingUserId !== input.fromUserId && actingUserId !== input.toUserId) {
+    throw new AppError(
+      403,
+      "Solo los implicados en la deuda o un administrador pueden marcarla como pagada",
+      "not_settlement_participant",
+    );
+  }
+
+  const [currency] = await db
+    .select({ code: currencies.code })
+    .from(currencies)
+    .where(eq(currencies.code, input.currencyCode))
+    .limit(1);
+  if (!currency) {
+    throw new AppError(400, `Moneda no soportada: "${input.currencyCode}"`, "unsupported_currency");
+  }
+
+  const [[fromUser], [toUser]] = await Promise.all([
+    db.select({ alias: users.alias }).from(users).where(eq(users.id, input.fromUserId)).limit(1),
+    db.select({ alias: users.alias }).from(users).where(eq(users.id, input.toUserId)).limit(1),
+  ]);
+  if (!fromUser || !toUser) {
+    throw new AppError(404, "Usuario no encontrado", "user_not_found");
+  }
+
+  return db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(settlementPayments)
+      .values({
+        groupId,
+        subgroupId: input.subgroupId ?? null,
+        fromUserId: input.fromUserId,
+        toUserId: input.toUserId,
+        amount: centsToAmount(input.amountCents),
+        currencyCode: input.currencyCode,
+        method: input.method,
+        recordedBy: actingUserId,
+      })
+      .returning();
+    if (!inserted) throw new AppError(500, "No se pudo registrar el pago");
+
+    await recordAuditLog(tx, {
+      actorUserId: actingUserId,
+      action: "create",
+      entityType: "settlement_payment",
+      entityId: inserted.id,
+      groupId,
+      afterData: inserted,
+    });
+
+    const recipients = new Set([input.fromUserId, input.toUserId]);
+    recipients.delete(actingUserId);
+    const message = `${fromUser.alias} ha pagado a ${toUser.alias} ${centsToAmount(input.amountCents)} ${input.currencyCode} (${SETTLEMENT_METHOD_LABEL[input.method]}).`;
+    for (const userId of recipients) {
+      await createNotification(tx, {
+        userId,
+        type: "settlement_payment_recorded",
+        groupId,
+        message,
+      });
+    }
+
+    return inserted;
+  });
 }

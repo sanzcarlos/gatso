@@ -91,6 +91,11 @@ export function GroupSummaryCard({
   participants,
   settlements,
   convertedOverall,
+  settlementGroupId,
+  settlementSubgroupId,
+  currentUserId,
+  isAdmin = false,
+  onSettlementPaid,
   subgroups,
   pendingCount = 0,
   expenseAction,
@@ -108,6 +113,11 @@ export function GroupSummaryCard({
   participants: SummaryParticipant[];
   settlements: CurrencySettlement[] | null;
   convertedOverall: CurrencySettlement | null;
+  settlementGroupId?: string | undefined;
+  settlementSubgroupId?: string | undefined;
+  currentUserId?: string | undefined;
+  isAdmin?: boolean;
+  onSettlementPaid?: (() => Promise<void> | void) | undefined;
   subgroups: SummarySubgroup[];
   pendingCount?: number;
   expenseAction?: ReactNode;
@@ -237,7 +247,15 @@ export function GroupSummaryCard({
             <DialogTitle>Liquidacion</DialogTitle>
             <DialogDescription>La forma mas sencilla de saldar las deudas pendientes de {name}.</DialogDescription>
           </DialogHeader>
-          <SettlementCard settlements={settlements} convertedOverall={convertedOverall} />
+          <SettlementCard
+            settlements={settlements}
+            convertedOverall={convertedOverall}
+            groupId={settlementGroupId}
+            subgroupId={settlementSubgroupId}
+            currentUserId={currentUserId}
+            isAdmin={isAdmin}
+            onPaid={onSettlementPaid}
+          />
         </DialogContent>
       </Dialog>
 

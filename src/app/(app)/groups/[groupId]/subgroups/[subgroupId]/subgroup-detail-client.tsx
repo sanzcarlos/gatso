@@ -350,6 +350,11 @@ export default function SubgroupDetailClient({
         participants={members.map((member) => ({ userId: member.userId, alias: member.alias }))}
         settlements={settlements}
         convertedOverall={convertedOverall}
+        settlementGroupId={groupId}
+        settlementSubgroupId={subgroupId}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        onSettlementPaid={load}
         subgroups={[]}
         pendingCount={pendingExpenses.length}
         expenseAction={

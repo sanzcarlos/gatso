@@ -1408,15 +1408,6 @@ verdad (ver limitaciones abajo).
 
 ### Pendiente / fuera de alcance de esta fase
 
-- No se implemento un boton "Marcar como pagado" ni una tabla de
-  liquidaciones ya realizadas: la vista siempre recalcula la liquidacion
-  optima a partir del estado actual de los gastos. Si se quisiera
-  registrar que una transaccion sugerida ya se efectuo fuera de la app
-  (transferencia bancaria, efectivo, etc.), haria falta una tabla nueva de
-  "pagos de liquidacion" y volver a calcular el optimo excluyendo lo ya
-  pagado; no estaba en el alcance explicito de esta fase (solo minimizar
-  el numero de transacciones sugeridas), se puede abordar como mejora
-  futura si se pide.
 - El umbral `EXACT_THRESHOLD = 8` para pasar del algoritmo exacto al
   voraz no se expone como configuracion (a diferencia de otros limites
   del proyecto via `app_config`): es un detalle de rendimiento interno,
@@ -1424,6 +1415,47 @@ verdad (ver limitaciones abajo).
 - Verificado con `tsc --noEmit`, `vitest run` (29/29, incluye los 8 tests
   nuevos de `src/lib/settlements/optimize.test.ts`) y `next build` (nueva
   ruta `/api/groups/[groupId]/settlement` generada correctamente).
+
+### Ampliacion (Fase 9 ampliada) — Marcar deudas como pagadas
+
+Lo que esta seccion marcaba como "pendiente / fuera de alcance" (boton
+"Marcar como pagado" y tabla de liquidaciones ya realizadas) se ha
+implementado:
+
+- Tabla nueva `settlement_payments` (`src/db/schema/settlement-payments.ts`,
+  migracion `drizzle/0007_thin_carlie_cooper.sql`): registra que una
+  transaccion sugerida (origen, destino, importe, moneda, ambito
+  grupo/subgrupo) se ha saldado realmente fuera de la app, con el metodo
+  usado (`settlement_payment_method`: `cash` | `bizum` | `transfer`, ver
+  `src/lib/settlements/methods.ts`).
+- `getGroupSettlement` (`src/lib/settlements/service.ts`) resta estos
+  importes de los balances netos **antes** de recalcular el optimo de
+  transacciones, en el mismo ambito con el que se registro el pago: una
+  deuda ya marcada como pagada deja de aparecer como pendiente la
+  siguiente vez que se consulta la liquidacion, sin necesidad de tocar los
+  gastos originales.
+- `recordSettlementPayment` (mismo fichero) solo permite marcar una deuda
+  como pagada a los dos implicados en ella o a un administrador del grupo;
+  registra un log de auditoria (`entityType: "settlement_payment"`) y
+  notifica al otro implicado (no a quien registra el pago) con el importe
+  y el metodo usado (`notification_type: "settlement_payment_recorded"`,
+  ver `src/db/schema/notifications.ts` y `src/components/notifications-bell.tsx`).
+- Ruta nueva `POST /api/groups/[groupId]/settlement/payments`
+  (`src/app/api/groups/[groupId]/settlement/payments/route.ts`), validada
+  con `src/lib/validation/settlements.ts`.
+- UI: `SettlementCard` (`src/components/settlement-card.tsx`) anade un
+  boton "Marcar como pagado" en cada transaccion sugerida que abre un
+  dialogo para elegir el metodo (Select con las mismas tres opciones) y
+  confirmar; tras confirmarlo, se recarga la liquidacion. El boton solo se
+  muestra a los implicados en la deuda o a un administrador (`groupId`,
+  `currentUserId`, `isAdmin` pasados desde `group-detail-client.tsx` /
+  `subgroup-detail-client.tsx` via `GroupSummaryCard`). El resumen
+  combinado multi-moneda (`convertedOverall`) no muestra el boton: se
+  recalcula automaticamente a partir de las monedas individuales ya
+  ajustadas, marcar los pagos por moneda es suficiente.
+- Verificado con `tsc --noEmit`, `vitest run` (53/53) y `next build`
+  (nueva ruta `/api/groups/[groupId]/settlement/payments` generada
+  correctamente). Migracion aplicada con `pnpm db:migrate`.
 
 ## Fase 10 - Multimoneda y funcionamiento offline (implementacion avanzada, pendiente de endurecimiento)
 

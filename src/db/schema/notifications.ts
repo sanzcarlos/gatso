@@ -7,7 +7,10 @@ import { expenses } from "./expenses";
  * Tipos de notificacion soportados (Fase 4). Ampliable sin migrar el
  * modelo: anadir un valor nuevo al enum solo requiere una migracion aditiva.
  */
-export const notificationTypeEnum = pgEnum("notification_type", ["expense_pending_validation"]);
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "expense_pending_validation",
+  "settlement_payment_recorded",
+]);
 
 /**
  * Notificacion dirigida a un usuario. Usada, de momento, para avisar al

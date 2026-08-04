@@ -50,6 +50,13 @@
       "when": 1785785006368,
       "tag": "0006_supreme_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785824116792,
+      "tag": "0007_thin_carlie_cooper",
+      "breakpoints": true
     }
   ]
 }
