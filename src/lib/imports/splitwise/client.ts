@@ -50,6 +50,10 @@ export interface SplitwiseExpense {
   deleted_at: string | null;
   created_by: SplitwiseUser | null;
   users: SplitwiseExpenseUserShare[];
+  /** Presente si el proveedor tiene un recibo adjunto (backlog: dato que Gatso no importa, solo se cuenta en la vista previa). */
+  receipt?: { original?: string | null; large?: string | null } | null;
+  comments_count?: number;
+  repeats?: boolean;
 }
 
 export interface SplitwiseExpensesResponse {
@@ -131,9 +135,9 @@ async function splitwiseFetch<T>(accessToken: string, path: string, searchParams
 
 export interface GetExpensesParams {
   groupId: string;
-  limit?: number;
-  offset?: number;
-  updatedAfter?: string;
+  limit?: number | undefined;
+  offset?: number | undefined;
+  updatedAfter?: string | undefined;
 }
 
 const DEFAULT_EXPENSES_PAGE_LIMIT = 20;
