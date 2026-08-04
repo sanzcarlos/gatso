@@ -1,8 +1,9 @@
-import { and, eq, inArray, desc } from "drizzle-orm";
+import { and, eq, inArray, desc, count } from "drizzle-orm";
 import { db, importJobs, importJobErrors, memberships, groups } from "@/db";
 import type { ImportJob } from "@/db/schema/import-jobs";
 import { AppError } from "@/lib/errors";
 import { requireGroupAdmin, createGroup } from "@/lib/groups/service";
+import { addUserToAllGroupSubgroups } from "@/lib/groups/subgroup-service";
 import { createExpense } from "@/lib/expenses/service";
 import { recordSettlementPayment } from "@/lib/settlements/service";
 import { recordAuditLog } from "@/lib/audit/service";
@@ -55,6 +56,65 @@ async function insertJobError(
   });
 }
 
+/**
+ * Anade como miembros del grupo destino a los usuarios Gatso mapeados que
+ * todavia no lo sean (Fase 11: el desplegable de mapeo ofrece cualquier
+ * usuario que el importador conozca de otro de sus grupos, no solo los
+ * miembros actuales del grupo destino, para no obligar a invitar primero
+ * a alguien con quien ya se comparte grupo en otro sitio). Se hace como
+ * parte de la misma accion explicita y autenticada de confirmar la
+ * importacion (el usuario ya debe ser administrador del grupo destino,
+ * comprobado antes de llamar a esta funcion): no es una alta silenciosa
+ * en segundo plano.
+ *
+ * Los participantes de Splitwise SIN cuenta Gatso (no aparecen en el
+ * mapeo porque no se ha seleccionado ningun usuario para ellos) siguen
+ * sin poder anadirse aqui por diseno (backlog: "no se crearan cuentas
+ * con contrasenas ficticias"); deben invitarse por el flujo normal
+ * (`createGroupInvitation`) y remapearse despues de aceptar.
+ */
+async function ensureGroupMembers(groupId: string, actingUserId: string, gatsoUserIds: string[], importJobId: string): Promise<void> {
+  if (gatsoUserIds.length === 0) return;
+
+  await db.transaction(async (tx) => {
+    const [group] = await tx.select().from(groups).where(eq(groups.id, groupId)).for("update").limit(1);
+    if (!group) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+
+    const memberRows = await tx
+      .select({ userId: memberships.userId })
+      .from(memberships)
+      .where(and(eq(memberships.groupId, groupId), inArray(memberships.userId, gatsoUserIds)));
+    const existingIds = new Set(memberRows.map((m) => m.userId));
+    const missingIds = gatsoUserIds.filter((id) => !existingIds.has(id));
+    if (missingIds.length === 0) return;
+
+    const [memberCountRow] = await tx.select({ value: count() }).from(memberships).where(eq(memberships.groupId, groupId));
+    const currentCount = memberCountRow?.value ?? 0;
+    if (currentCount + missingIds.length > group.maxMembers) {
+      throw new AppError(
+        409,
+        `Anadir a los participantes mapeados superaria el limite de ${group.maxMembers} miembros del grupo`,
+        "group_full",
+      );
+    }
+
+    for (const userId of missingIds) {
+      const [membership] = await tx.insert(memberships).values({ groupId, userId, role: "member" }).returning();
+      await addUserToAllGroupSubgroups(tx, groupId, userId);
+      if (membership) {
+        await recordAuditLog(tx, {
+          actorUserId: actingUserId,
+          action: "create",
+          entityType: "membership",
+          entityId: membership.id,
+          groupId,
+          afterData: { ...membership, addedViaSplitwiseImport: true, importJobId },
+        });
+      }
+    }
+  });
+}
+
 export interface ParticipantMappingInput {
   externalId: string;
   gatsoUserId: string;
@@ -74,9 +134,9 @@ export interface CreateSplitwiseImportJobInput {
  * Crea el trabajo de importacion (backlog: "confirmacion y creacion del
  * job"). Valida el modo de destino (crear grupo nuevo o importar en uno
  * existente administrado por el usuario, "la segunda opcion exige rol de
- * administrador") y que el mapeo de participantes cubra usuarios
- * realmente miembros del grupo destino, antes de procesar el primer
- * lote de gastos de forma sincrona.
+ * administrador"); los usuarios Gatso mapeados que aun no sean miembros
+ * del grupo destino se anaden automaticamente (`ensureGroupMembers`)
+ * antes de procesar el primer lote de gastos de forma sincrona.
  */
 export async function createSplitwiseImportJob(actingUserId: string, input: CreateSplitwiseImportJobInput): Promise<ImportJob> {
   let targetGroupId: string;
@@ -96,23 +156,6 @@ export async function createSplitwiseImportJob(actingUserId: string, input: Crea
     targetGroupId = group.id;
   }
 
-  const gatsoUserIds = [...new Set(input.participantMappings.map((m) => m.gatsoUserId))];
-  if (gatsoUserIds.length > 0) {
-    const memberRows = await db
-      .select({ userId: memberships.userId })
-      .from(memberships)
-      .where(and(eq(memberships.groupId, targetGroupId), inArray(memberships.userId, gatsoUserIds)));
-    const memberIds = new Set(memberRows.map((m) => m.userId));
-    const notMembers = gatsoUserIds.filter((id) => !memberIds.has(id));
-    if (notMembers.length > 0) {
-      throw new AppError(
-        400,
-        "Algunos usuarios mapeados no son miembros del grupo destino; invitalos primero",
-        "participant_not_in_target_group",
-      );
-    }
-  }
-
   const [job] = await db
     .insert(importJobs)
     .values({
@@ -125,6 +168,9 @@ export async function createSplitwiseImportJob(actingUserId: string, input: Crea
     })
     .returning();
   if (!job) throw new AppError(500, "No se pudo crear el trabajo de importacion");
+
+  const gatsoUserIds = [...new Set(input.participantMappings.map((m) => m.gatsoUserId))];
+  await ensureGroupMembers(targetGroupId, actingUserId, gatsoUserIds, job.id);
 
   await recordEntityMapping("group", input.sourceGroupExternalId, targetGroupId, job.id);
   for (const mapping of input.participantMappings) {

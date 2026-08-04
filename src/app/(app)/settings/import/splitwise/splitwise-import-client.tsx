@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { InviteMemberDialog } from "@/app/(app)/groups/[groupId]/invite-member-dialog";
 
 interface SplitwiseGroupOption {
   externalId: string;
@@ -39,7 +40,7 @@ interface GatsoGroupOption {
   name: string;
 }
 
-interface GatsoMember {
+interface KnownUser {
   userId: string;
   alias: string;
 }
@@ -95,17 +96,22 @@ const STATUS_VARIANT: Record<ImportJob["status"], "outline" | "secondary" | "suc
 /**
  * Asistente de importacion desde Splitwise (Fase 11). Flujo secuencial:
  * conectar cuenta -> elegir grupo Splitwise -> vista previa (solo
- * lectura) -> elegir destino en Gatso -> mapear participantes -> crear
- * job (procesa el primer lote) -> seguir progreso hasta terminar.
+ * lectura) -> elegir/crear destino en Gatso -> mapear participantes ->
+ * crear job (procesa el primer lote) -> seguir progreso hasta terminar.
  *
- * Limitacion documentada: al crear un grupo Gatso nuevo, solo el propio
- * usuario es miembro en el momento de mapear participantes (un grupo
- * recien creado no tiene mas miembros todavia); para mapear al resto hay
- * que invitarlos primero a Gatso y volver despues a esta pantalla, o
- * bien importar directamente en un grupo Gatso existente que ya los
- * tenga como miembros. Los gastos con participantes sin mapear no se
- * bloquean: se registran como error individual en el informe del job en
- * vez de abortar toda la importacion.
+ * El grupo destino se crea (o se elige uno existente) ANTES de mapear
+ * participantes, no al confirmar la importacion: asi el mapeo siempre
+ * trabaja sobre un grupo Gatso real. El desplegable de mapeo ofrece
+ * cualquier usuario con el que el importador ya comparta otro grupo
+ * (`listKnownUsers`), no solo los miembros actuales del grupo destino:
+ * si se elige a alguien que aun no es miembro, se anade automaticamente
+ * al confirmar (`ensureGroupMembers` en el servicio). Para participantes
+ * sin ninguna cuenta Gatso todavia, "Invitar a alguien nuevo" genera un
+ * enlace de invitacion (no crea cuentas con contrasenas ficticias, deben
+ * aceptarlo ellos mismos); tras aceptarlo, "Actualizar lista" los incluye
+ * en el desplegable. Los gastos con participantes sin mapear no bloquean
+ * el resto de la importacion: se registran como error individual en el
+ * informe del job.
  */
 export default function SplitwiseImportClient() {
   const searchParams = useSearchParams();
@@ -120,10 +126,13 @@ export default function SplitwiseImportClient() {
 
   const [createMode, setCreateMode] = useState<"create" | "existing">("create");
   const [newGroupName, setNewGroupName] = useState("");
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [adminGroups, setAdminGroups] = useState<GatsoGroupOption[] | null>(null);
   const [targetGroupId, setTargetGroupId] = useState("");
-  const [members, setMembers] = useState<GatsoMember[] | null>(null);
-  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [targetGroupName, setTargetGroupName] = useState("");
+
+  const [knownUsers, setKnownUsers] = useState<KnownUser[] | null>(null);
+  const [loadingKnownUsers, setLoadingKnownUsers] = useState(false);
 
   const [mappings, setMappings] = useState<Record<string, string>>({});
   const [creatingJob, setCreatingJob] = useState(false);
@@ -223,24 +232,55 @@ export default function SplitwiseImportClient() {
   }, []);
 
   useEffect(() => {
-    if (createMode === "existing" && preview) void loadAdminGroups();
-  }, [createMode, preview, loadAdminGroups]);
+    if (createMode === "existing" && preview && !targetGroupId) void loadAdminGroups();
+  }, [createMode, preview, targetGroupId, loadAdminGroups]);
 
-  const loadMembers = useCallback(async (groupId: string) => {
-    setLoadingMembers(true);
+  const loadKnownUsers = useCallback(async () => {
+    setLoadingKnownUsers(true);
     try {
-      const response = await apiFetch(`/api/groups/${groupId}/members`);
+      const response = await apiFetch("/api/users/known");
       if (!response.ok) return;
       const data = await response.json();
-      setMembers(data.members.map((m: { userId: string; alias: string }) => ({ userId: m.userId, alias: m.alias })));
+      setKnownUsers(data.users.map((u: { id: string; alias: string }) => ({ userId: u.id, alias: u.alias })));
     } finally {
-      setLoadingMembers(false);
+      setLoadingKnownUsers(false);
     }
   }, []);
 
   useEffect(() => {
-    if (createMode === "existing" && targetGroupId) void loadMembers(targetGroupId);
-  }, [createMode, targetGroupId, loadMembers]);
+    void loadKnownUsers();
+  }, [loadKnownUsers]);
+
+  async function handleCreateGroupNow() {
+    if (!newGroupName.trim()) {
+      toast.error("Ponle un nombre al grupo nuevo");
+      return;
+    }
+    setCreatingGroup(true);
+    try {
+      const response = await apiFetch("/api/groups", {
+        method: "POST",
+        body: JSON.stringify({ name: newGroupName.trim() }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo crear el grupo");
+        return;
+      }
+      const data = await response.json();
+      setTargetGroupId(data.group.id);
+      setTargetGroupName(data.group.name);
+      toast.success("Grupo creado");
+      await loadKnownUsers();
+    } finally {
+      setCreatingGroup(false);
+    }
+  }
+
+  function handleSelectExistingGroup(groupId: string) {
+    setTargetGroupId(groupId);
+    setTargetGroupName(adminGroups?.find((g) => g.id === groupId)?.name ?? "");
+  }
 
   function handleMappingChange(externalId: string, gatsoUserId: string) {
     setMappings((current) => {
@@ -290,12 +330,8 @@ export default function SplitwiseImportClient() {
 
   async function handleCreateJob() {
     if (!preview) return;
-    if (createMode === "create" && !newGroupName.trim()) {
-      toast.error("Ponle un nombre al grupo nuevo");
-      return;
-    }
-    if (createMode === "existing" && !targetGroupId) {
-      toast.error("Elige el grupo Gatso donde importar");
+    if (!targetGroupId) {
+      toast.error("Elige o crea primero el grupo Gatso destino");
       return;
     }
     const participantMappings = Object.entries(mappings).map(([externalId, gatsoUserId]) => ({ externalId, gatsoUserId }));
@@ -311,8 +347,8 @@ export default function SplitwiseImportClient() {
         body: JSON.stringify({
           sourceGroupExternalId: preview.sourceGroupExternalId,
           sourceGroupName: preview.sourceGroupName,
-          createMode,
-          ...(createMode === "existing" ? { targetGroupId } : { targetGroupName: newGroupName.trim() }),
+          createMode: "existing",
+          targetGroupId,
           participantMappings,
         }),
       });
@@ -503,10 +539,11 @@ export default function SplitwiseImportClient() {
         </Card>
       ) : null}
 
-      {preview ? (
+      {preview && !targetGroupId ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">3. Destino en Gatso</CardTitle>
+            <CardDescription>El grupo debe existir antes de mapear participantes.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="flex gap-2">
@@ -521,12 +558,12 @@ export default function SplitwiseImportClient() {
             {createMode === "create" ? (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="new-group-name">Nombre del grupo nuevo</Label>
-                <Input id="new-group-name" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} maxLength={64} />
-                <p className="text-xs text-muted-foreground">
-                  Al crearse, solo tu seras miembro. Invita al resto de participantes desde la pagina del grupo y
-                  vuelve aqui despues para poder mapearlos (o importa directamente en un grupo existente que ya los
-                  tenga).
-                </p>
+                <div className="flex gap-2">
+                  <Input id="new-group-name" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} maxLength={64} />
+                  <Button onClick={handleCreateGroupNow} disabled={creatingGroup}>
+                    {creatingGroup ? "Creando..." : "Crear grupo"}
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
@@ -536,7 +573,7 @@ export default function SplitwiseImportClient() {
                 ) : adminGroups.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No administras ningun grupo todavia.</p>
                 ) : (
-                  <Select value={targetGroupId} onValueChange={setTargetGroupId}>
+                  <Select value={targetGroupId} onValueChange={handleSelectExistingGroup}>
                     <SelectTrigger className="w-72" aria-label="Grupo Gatso existente">
                       <SelectValue placeholder="Selecciona un grupo" />
                     </SelectTrigger>
@@ -555,18 +592,29 @@ export default function SplitwiseImportClient() {
         </Card>
       ) : null}
 
-      {preview && (createMode === "create" || (createMode === "existing" && targetGroupId)) ? (
+      {preview && targetGroupId ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">4. Mapea los participantes</CardTitle>
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              4. Mapea los participantes
+              <Badge variant="secondary">Destino: {targetGroupName}</Badge>
+            </CardTitle>
             <CardDescription>
-              Ningun emparejamiento se hace automaticamente por nombre: revisa cada persona antes de confirmar. Los
-              gastos con participantes sin mapear se marcaran como error individual (no bloquean el resto de la
-              importacion).
+              El desplegable incluye a cualquier persona con la que ya compartes otro grupo en Gatso. Si eliges a
+              alguien que aun no es miembro de "{targetGroupName}", se anadira automaticamente al confirmar. Ningun
+              emparejamiento se hace por nombre: revisa cada persona. Los gastos con participantes sin mapear no
+              bloquean el resto de la importacion (se registran como error individual en el informe).
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {createMode === "existing" && loadingMembers ? (
+            <div className="mb-4 flex items-center gap-2">
+              <InviteMemberDialog groupId={targetGroupId} />
+              <Button variant="outline" size="sm" onClick={loadKnownUsers} disabled={loadingKnownUsers}>
+                <RefreshCw className={loadingKnownUsers ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+                Actualizar lista
+              </Button>
+            </div>
+            {loadingKnownUsers && knownUsers === null ? (
               <Skeleton className="h-32 w-full" />
             ) : (
               <div className="flex flex-col gap-3">
@@ -581,9 +629,9 @@ export default function SplitwiseImportClient() {
                         <SelectValue placeholder="Sin mapear" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(members ?? []).map((member) => (
-                          <SelectItem key={member.userId} value={member.userId}>
-                            {member.alias}
+                        {(knownUsers ?? []).map((user) => (
+                          <SelectItem key={user.userId} value={user.userId}>
+                            {user.alias}
                           </SelectItem>
                         ))}
                       </SelectContent>

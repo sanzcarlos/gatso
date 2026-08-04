@@ -42,6 +42,27 @@ export async function getPublicProfile(requestingUserId: string, targetUserId: s
 }
 
 /**
+ * Lista, sin duplicados, todos los usuarios con los que el usuario
+ * indicado comparte al menos un grupo (incluyendose a si mismo), sin
+ * enumeracion abierta (mismo criterio de relacion que
+ * `getPublicProfile`). Usado por el mapeo de participantes de la
+ * importacion desde Splitwise (Fase 11): permite elegir directamente a
+ * cualquier persona ya conocida de otro grupo, no solo a los miembros
+ * actuales del grupo destino concreto.
+ */
+export async function listKnownUsers(requestingUserId: string) {
+  const myGroups = aliasTable(memberships, "my_groups");
+  const rows = await db
+    .selectDistinct({ id: users.id, alias: users.alias })
+    .from(memberships)
+    .innerJoin(myGroups, eq(myGroups.groupId, memberships.groupId))
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(eq(myGroups.userId, requestingUserId))
+    .orderBy(users.alias);
+  return rows;
+}
+
+/**
  * Crea un usuario nuevo (alias + contrasena) de forma segura frente a
  * condiciones de carrera: aunque se compruebe la disponibilidad del alias
  * antes de insertar (UX rapida, mensaje claro), dos registros concurrentes
