@@ -15,7 +15,7 @@ interface AuditEntry {
   action: "create" | "update" | "delete";
   entityType: "expense" | "group" | "subgroup" | "membership" | "subgroup_membership" | string;
   actorUserId: string;
-  actorAlias: string;
+  actorDisplayName: string;
   createdAt: string;
   beforeData: { description?: string; name?: string; leftVoluntarily?: boolean } | null;
   afterData: { description?: string; name?: string; validated?: boolean; role?: string } | null;
@@ -174,7 +174,7 @@ export function GroupAuditLogCard({ groupId }: { groupId: string }) {
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary">{ACTION_LABEL[entry.action]}</Badge>
                     <span className="text-sm text-foreground">
-                      <strong>{entry.actorAlias}</strong> {describeEntry(entry)}
+                      <strong>{entry.actorDisplayName}</strong> {describeEntry(entry)}
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</span>

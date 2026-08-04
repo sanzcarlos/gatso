@@ -1,5 +1,5 @@
 import { getSession } from "@/lib/auth/session";
-import { isPlatformAdmin } from "@/lib/auth/platform-admin";
+import { getSessionDisplayInfo } from "@/lib/users/service";
 import { SiteHeader } from "@/components/site-header";
 import { InstallPrompt } from "@/components/install-prompt";
 import { Button } from "@/components/ui/button";
@@ -9,16 +9,24 @@ import { ArrowRight, Calculator, ReceiptText, ShieldCheck, Wifi, type LucideIcon
 const homeFeatures: { icon: LucideIcon; title: string; description: string }[] = [
   { icon: Calculator, title: "Repartos exactos", description: "Iguales, por porcentaje o por importe, siempre sin perder un centimo." },
   { icon: Wifi, title: "Funciona offline", description: "Consulta tus ultimos datos y anade gastos aunque pierdas la conexion." },
-  { icon: ShieldCheck, title: "Privacidad real", description: "Un alias es suficiente. No recopilamos datos de contacto." },
+  { icon: ShieldCheck, title: "Privacidad real", description: "Un usuario es suficiente. No recopilamos datos de contacto." },
 ];
 
 export default async function HomePage() {
   const session = await getSession();
-  const isAdmin = session ? await isPlatformAdmin(session.userId) : false;
+  const { displayName, isPlatformAdmin: isAdmin } = session
+    ? await getSessionDisplayInfo(session.userId)
+    : { displayName: null, isPlatformAdmin: false };
 
   return (
     <div className="flex min-h-screen flex-col">
-      <SiteHeader session={session ? { ...session, isPlatformAdmin: isAdmin } : null} />
+      <SiteHeader
+        session={
+          session
+            ? { userId: session.userId, username: session.username, displayName: displayName ?? session.username, isPlatformAdmin: isAdmin }
+            : null
+        }
+      />
       <InstallPrompt />
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-14 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
         <section className="grid items-center gap-12 lg:grid-cols-[1.08fr_.92fr]">
@@ -40,7 +48,7 @@ export default async function HomePage() {
               </Button>
               {!session ? <Button size="lg" variant="outline" asChild><Link href="/login">Ya tengo cuenta</Link></Button> : null}
             </div>
-            {session ? <p className="mt-4 text-sm text-muted-foreground">Sesion activa como <strong className="text-foreground">{session.alias}</strong></p> : null}
+            {session ? <p className="mt-4 text-sm text-muted-foreground">Sesion activa como <strong className="text-foreground">{displayName ?? session.username}</strong></p> : null}
           </div>
 
           <div className="relative mx-auto w-full max-w-lg">

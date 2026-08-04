@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { aliasSchema, passwordSchema } from "./auth";
+import { usernameSchema, displayNameSchema, passwordSchema } from "./auth";
 
 export const GROUP_MAX_MEMBERS = 64;
 export const GROUP_MAX_SUBGROUPS = 32;
@@ -34,18 +34,20 @@ export const joinGroupSchema = z.object({
 });
 
 /**
- * `suggestedAlias` es solo una sugerencia mostrada en el formulario de
- * aceptacion (ej. nombre de un participante importado de Splitwise, Fase
- * 11): deliberadamente mas permisivo que `aliasSchema` (no exige el
- * patron final de alias, la persona invitada puede editarlo libremente
- * antes de aceptar).
+ * `suggestedDisplayName` es solo una sugerencia mostrada en el formulario
+ * de aceptacion (ej. nombre de un participante importado de Splitwise,
+ * Fase 11): usa el mismo esquema laxo que `displayNameSchema` (texto
+ * libre, sin el patron de slug de `usernameSchema`), la persona invitada
+ * puede editarlo libremente antes de aceptar.
  */
 export const createInvitationSchema = z.object({
-  suggestedAlias: z.string().trim().max(64, "Maximo 64 caracteres").optional(),
+  suggestedDisplayName: displayNameSchema.optional(),
 });
 
 export const acceptInvitationSchema = z.object({
-  alias: aliasSchema,
+  username: usernameSchema,
+  /** Si se omite, se usa `suggestedDisplayName` de la invitacion (o el propio username) como nombre visible inicial. */
+  displayName: displayNameSchema.optional(),
   password: passwordSchema,
 });
 

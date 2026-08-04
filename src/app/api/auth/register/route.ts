@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { registerSchema } from "@/lib/validation/auth";
-import { createUserWithAlias } from "@/lib/users/service";
+import { createUserWithUsername } from "@/lib/users/service";
 import { createSessionToken, setSessionCookie } from "@/lib/auth/session";
 import { enforceRegistrationRateLimit, recordRegistrationAttempt } from "@/lib/rate-limit/service";
 import { errorResponse } from "@/lib/api/handle-error";
@@ -17,19 +17,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const { alias, password } = parsed.data;
+  const { username, displayName, password } = parsed.data;
 
   try {
-    await enforceRegistrationRateLimit(alias);
-    const { user, recoveryCode } = await createUserWithAlias(alias, password);
-    await recordRegistrationAttempt(alias);
+    await enforceRegistrationRateLimit(username);
+    const { user, recoveryCode } = await createUserWithUsername(username, password, displayName);
+    await recordRegistrationAttempt(username);
 
-    const token = await createSessionToken({ userId: user.id, alias: user.alias });
+    const token = await createSessionToken({ userId: user.id, username: user.username });
     await setSessionCookie(token);
 
     return NextResponse.json(
       {
-        user: { id: user.id, alias: user.alias },
+        user: { id: user.id, username: user.username, displayName: user.displayName },
         recoveryCode,
         warning:
           "Guarda este codigo de recuperacion en un lugar seguro: es la unica forma de recuperar tu cuenta si olvidas tu contrasena, y no se mostrara de nuevo.",
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
-    await recordRegistrationAttempt(alias).catch(() => {});
+    await recordRegistrationAttempt(username).catch(() => {});
     return errorResponse(error);
   }
 }

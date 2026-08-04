@@ -36,7 +36,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   try {
-    const invitation = await createGroupInvitation(groupId, auth.userId, parsed.data.suggestedAlias);
+    const invitation = await createGroupInvitation(groupId, auth.userId, parsed.data.suggestedDisplayName);
     return NextResponse.json({ invitation }, { status: 201 });
   } catch (error) {
     return errorResponse(error);

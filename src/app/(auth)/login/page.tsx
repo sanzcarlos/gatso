@@ -11,7 +11,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 
 export default function LoginPage() {
   const router = useRouter();
-  const [alias, setAlias] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ export default function LoginPage() {
     try {
       const response = await apiFetch("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ alias, password }),
+        body: JSON.stringify({ username, password }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -41,13 +41,13 @@ export default function LoginPage() {
     <Card className="shadow-lg">
       <CardHeader className="pb-5">
         <CardTitle className="text-2xl">Bienvenido de nuevo</CardTitle>
-        <CardDescription>Introduce tu alias y contrasena.</CardDescription>
+        <CardDescription>Introduce tu usuario y contrasena.</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="alias">Alias</Label>
-            <Input id="alias" value={alias} onChange={(e) => setAlias(e.target.value)} required />
+            <Label htmlFor="username">Usuario</Label>
+            <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="password">Contrasena</Label>

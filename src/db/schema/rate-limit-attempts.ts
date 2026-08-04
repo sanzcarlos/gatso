@@ -7,7 +7,7 @@ import { pgTable, uuid, varchar, timestamp, index } from "drizzle-orm/pg-core";
  * mantiene separado de `auth_attempts` (Fase 4, especifico de login/recover
  * y con su propio enum de accion) para no acoplar ambos mecanismos: aqui
  * `scope` es texto libre (una accion nueva no requiere migrar un enum) y
- * `key` es la clave por la que se cuenta (un alias, un userId o un valor
+ * `key` es la clave por la que se cuenta (un username, un userId o un valor
  * fijo para limites globales sin identidad, ver
  * `src/lib/rate-limit/service.ts`).
  */

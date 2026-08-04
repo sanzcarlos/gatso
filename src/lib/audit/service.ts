@@ -106,7 +106,7 @@ export async function getGroupAuditLog(groupId: string, actingUserId: string, fi
       entityType: auditLogs.entityType,
       entityId: auditLogs.entityId,
       actorUserId: auditLogs.actorUserId,
-      actorAlias: users.alias,
+      actorDisplayName: users.displayName,
       beforeData: auditLogs.beforeData,
       afterData: auditLogs.afterData,
       createdAt: auditLogs.createdAt,
@@ -144,7 +144,7 @@ export async function getPlatformAuditLog(actingUserId: string, filters: AuditLo
       entityType: auditLogs.entityType,
       entityId: auditLogs.entityId,
       actorUserId: auditLogs.actorUserId,
-      actorAlias: users.alias,
+      actorDisplayName: users.displayName,
       beforeData: auditLogs.beforeData,
       afterData: auditLogs.afterData,
       createdAt: auditLogs.createdAt,
@@ -164,7 +164,7 @@ type AuditLogEntry = {
   entityType: string;
   entityId: string;
   actorUserId: string;
-  actorAlias: string;
+  actorDisplayName: string;
   beforeData: unknown;
   afterData: unknown;
   createdAt: Date;

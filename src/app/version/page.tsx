@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { getSession } from "@/lib/auth/session";
-import { isPlatformAdmin } from "@/lib/auth/platform-admin";
+import { getSessionDisplayInfo } from "@/lib/users/service";
 import { SiteHeader } from "@/components/site-header";
 import { getVersionInfo } from "@/lib/version";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -39,12 +39,20 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
  */
 export default async function VersionPage() {
   const session = await getSession();
-  const isAdmin = session ? await isPlatformAdmin(session.userId) : false;
+  const { displayName, isPlatformAdmin: isAdmin } = session
+    ? await getSessionDisplayInfo(session.userId)
+    : { displayName: null, isPlatformAdmin: false };
   const info = getVersionInfo();
 
   return (
     <div className="flex min-h-screen flex-col">
-      <SiteHeader session={session ? { ...session, isPlatformAdmin: isAdmin } : null} />
+      <SiteHeader
+        session={
+          session
+            ? { userId: session.userId, username: session.username, displayName: displayName ?? session.username, isPlatformAdmin: isAdmin }
+            : null
+        }
+      />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
         <div className="flex flex-col gap-6">
           <div>

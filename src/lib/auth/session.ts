@@ -9,11 +9,21 @@ export const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30;
 
 export interface SessionPayload {
   userId: string;
-  alias: string;
+  /**
+   * Credencial de acceso (Fase de identidad): no hay flujo de "cambiar
+   * username", asi que guardarla en el JWT es seguro y no se vuelve
+   * obsoleta. El `displayName` (editable en cualquier momento) NUNCA se
+   * guarda aqui a proposito -mismo criterio que `isPlatformAdmin`, que
+   * tampoco viaja en el token- para que un cambio de nombre visible
+   * surta efecto de inmediato en cualquier pestana abierta sin esperar a
+   * que caduque la sesion o se vuelva a iniciar sesion; se consulta en
+   * BD donde haga falta mostrarlo (`getSessionDisplayInfo`).
+   */
+  username: string;
 }
 
 export async function createSessionToken(payload: SessionPayload): Promise<string> {
-  return new SignJWT({ userId: payload.userId, alias: payload.alias })
+  return new SignJWT({ userId: payload.userId, username: payload.username })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_DURATION_SECONDS}s`)
@@ -23,10 +33,10 @@ export async function createSessionToken(payload: SessionPayload): Promise<strin
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, secretKey);
-    if (typeof payload.userId !== "string" || typeof payload.alias !== "string") {
+    if (typeof payload.userId !== "string" || typeof payload.username !== "string") {
       return null;
     }
-    return { userId: payload.userId, alias: payload.alias };
+    return { userId: payload.userId, username: payload.username };
   } catch {
     return null;
   }

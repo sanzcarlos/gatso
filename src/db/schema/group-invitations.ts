@@ -5,14 +5,15 @@ import { users } from "./users";
 /**
  * Invitacion personal a un grupo (distinta del `invite_code` publico del
  * grupo): genera un enlace unico de un solo uso, valido 24 horas, para que
- * una persona sin cuenta todavia pueda crear su usuario (alias + contrasena)
- * y unirse directamente al grupo que la invito.
+ * una persona sin cuenta todavia pueda crear su usuario (username +
+ * contrasena) y unirse directamente al grupo que la invito.
  *
- * `suggestedAlias` (opcional): nombre que quien genera el enlace propone
- * para la persona invitada (ej. su nombre en Splitwise al importar un
- * grupo, Fase 11), mostrado como valor prellenado -pero editable- en el
- * formulario de aceptacion. Nunca crea la cuenta por si solo: la persona
- * invitada sigue eligiendo su propio alias y contrasena al aceptar.
+ * `suggestedDisplayName` (opcional): nombre que quien genera el enlace
+ * propone para la persona invitada (ej. su nombre en Splitwise al
+ * importar un grupo, Fase 11), mostrado como valor prellenado -pero
+ * editable- en el campo "Nombre visible" del formulario de aceptacion.
+ * Nunca crea la cuenta por si solo: la persona invitada sigue eligiendo
+ * su propio username, displayName y contrasena al aceptar.
  *
  * `externalProvider`/`externalParticipantId` (opcional, Fase 11): cuando
  * la invitacion se genero automaticamente durante una importacion (ej.
@@ -32,7 +33,7 @@ export const groupInvitations = pgTable("group_invitations", {
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),
-  suggestedAlias: varchar("suggested_alias", { length: 64 }),
+  suggestedDisplayName: varchar("suggested_display_name", { length: 64 }),
   externalProvider: varchar("external_provider", { length: 32 }),
   externalParticipantId: varchar("external_participant_id", { length: 64 }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

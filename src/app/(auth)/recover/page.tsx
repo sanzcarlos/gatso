@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 
 export default function RecoverPage() {
-  const [alias, setAlias] = useState("");
+  const [username, setUsername] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export default function RecoverPage() {
     try {
       const response = await apiFetch("/api/auth/recover", {
         method: "POST",
-        body: JSON.stringify({ alias, recoveryCode, newPassword }),
+        body: JSON.stringify({ username, recoveryCode, newPassword }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -72,8 +72,8 @@ export default function RecoverPage() {
       <form onSubmit={handleSubmit}>
         <CardContent className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="alias">Alias</Label>
-            <Input id="alias" value={alias} onChange={(e) => setAlias(e.target.value)} required />
+            <Label htmlFor="username">Usuario</Label>
+            <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="recoveryCode">Codigo de recuperacion</Label>

@@ -16,36 +16,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Datos invalidos" }, { status: 400 });
   }
 
-  const { alias, password } = parsed.data;
-  const genericError = NextResponse.json({ error: "Alias o contrasena incorrectos" }, { status: 401 });
+  const { username, password } = parsed.data;
+  const genericError = NextResponse.json({ error: "Usuario o contrasena incorrectos" }, { status: 401 });
 
   try {
-    await enforceAuthRateLimit(alias, "login");
+    await enforceAuthRateLimit(username, "login");
   } catch (error) {
     return errorResponse(error);
   }
 
-  const [user] = await db.select().from(users).where(eq(users.alias, alias)).limit(1);
+  const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
 
   if (!user) {
     // Verificacion contra un hash senuelo para no filtrar por temporizacion
-    // si el alias existe o no.
+    // si el usuario existe o no.
     await verifySecret(DUMMY_HASH, password);
-    await recordAuthAttempt(alias, "login", false);
+    await recordAuthAttempt(username, "login", false);
     return genericError;
   }
 
   const valid = await verifySecret(user.passwordHash, password);
   if (!valid) {
-    await recordAuthAttempt(alias, "login", false);
+    await recordAuthAttempt(username, "login", false);
     return genericError;
   }
 
-  await recordAuthAttempt(alias, "login", true);
+  await recordAuthAttempt(username, "login", true);
 
-  const token = await createSessionToken({ userId: user.id, alias: user.alias });
+  const token = await createSessionToken({ userId: user.id, username: user.username });
   await setSessionCookie(token);
   await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
 
-  return NextResponse.json({ user: { id: user.id, alias: user.alias } });
+  return NextResponse.json({ user: { id: user.id, username: user.username, displayName: user.displayName } });
 }

@@ -103,13 +103,13 @@ export async function getSubgroupInGroup(groupId: string, subgroupId: string) {
   return subgroup;
 }
 
-/** Detalle de un subgrupo (para su pagina propia): datos + miembros con alias. */
+/** Detalle de un subgrupo (para su pagina propia): datos + miembros con displayName. */
 export async function getSubgroupDetail(groupId: string, subgroupId: string, userId: string) {
   await requireMembership(groupId, userId);
   const subgroup = await getSubgroupInGroup(groupId, subgroupId);
 
   const members = await db
-    .select({ userId: subgroupMemberships.userId, alias: users.alias })
+    .select({ userId: subgroupMemberships.userId, displayName: users.displayName })
     .from(subgroupMemberships)
     .innerJoin(users, eq(users.id, subgroupMemberships.userId))
     .where(eq(subgroupMemberships.subgroupId, subgroupId));

@@ -47,7 +47,7 @@ interface GroupDetail {
 
 interface Member {
   userId: string;
-  alias: string;
+  displayName: string;
   role: "admin" | "member";
 }
 
@@ -69,7 +69,7 @@ interface ExpenseRow {
     payerId: string;
     status: "confirmed" | "modified" | "pending_validation";
   };
-  payerAlias: string;
+  payerDisplayName: string;
   payerHasLeftGroup: boolean;
   groupBaseCurrencyCode?: string;
   convertedAmount?: string | null;
@@ -219,7 +219,7 @@ export default function GroupDetailClient({
         payerId: pending.payload.payerId,
         status: "confirmed",
       },
-      payerAlias: members?.find((m) => m.userId === pending.payload.payerId)?.alias ?? "?",
+      payerDisplayName: members?.find((m) => m.userId === pending.payload.payerId)?.displayName ?? "?",
       payerHasLeftGroup: false,
       pendingLocalId: pending.localId,
     }));
@@ -329,7 +329,7 @@ export default function GroupDetailClient({
         {canEdit && members ? (
           <ExpenseFormDialog
             groupId={groupId}
-            members={members.map((member) => ({ userId: member.userId, alias: member.alias }))}
+            members={members.map((member) => ({ userId: member.userId, displayName: member.displayName }))}
             subgroups={subgroups ?? []}
             onSaved={load}
             editExpenseId={expense.id}
@@ -390,14 +390,14 @@ export default function GroupDetailClient({
       <GroupSummaryCard
         name={detail.group.name}
         scopeLabel="grupo"
-        expenses={displayExpenses.map(({ expense, payerAlias, pendingLocalId }) => ({
+        expenses={displayExpenses.map(({ expense, payerDisplayName, pendingLocalId }) => ({
           id: expense.id,
           amount: expense.amount,
           currencyCode: expense.currencyCode,
           description: expense.description,
           notes: expense.notes,
           expenseDate: expense.expenseDate,
-          payerAlias,
+          payerDisplayName,
           payerId: expense.payerId,
           createdBy: expense.createdBy,
           status: expense.status,
@@ -407,7 +407,7 @@ export default function GroupDetailClient({
         stats={stats}
         baseCurrencyCode={statsBaseCurrency?.code ?? detail.group.baseCurrencyCode}
         totalConvertedCents={statsBaseCurrency?.totalConvertedCents ?? null}
-        participants={(members ?? []).map((member) => ({ userId: member.userId, alias: member.alias, role: member.role }))}
+        participants={(members ?? []).map((member) => ({ userId: member.userId, displayName: member.displayName, role: member.role }))}
         settlements={settlements}
         convertedOverall={convertedOverall}
         settlementGroupId={groupId}
@@ -423,7 +423,7 @@ export default function GroupDetailClient({
         expenseAction={members ? (
           <ExpenseFormDialog
             groupId={groupId}
-            members={members.map((member) => ({ userId: member.userId, alias: member.alias }))}
+            members={members.map((member) => ({ userId: member.userId, displayName: member.displayName }))}
             subgroups={subgroups ?? []}
             onSaved={load}
             groupBaseCurrencyCode={detail.group.baseCurrencyCode}
@@ -458,7 +458,7 @@ export default function GroupDetailClient({
           members ? (
             <ExpenseFormDialog
               groupId={groupId}
-              members={members.map((m) => ({ userId: m.userId, alias: m.alias }))}
+              members={members.map((m) => ({ userId: m.userId, displayName: m.displayName }))}
               subgroups={subgroups ?? []}
               onSaved={load}
               groupBaseCurrencyCode={detail.group.baseCurrencyCode}
@@ -482,7 +482,7 @@ export default function GroupDetailClient({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {displayExpenses.map(({ expense, payerAlias, payerHasLeftGroup, pendingLocalId, convertedAmount, groupBaseCurrencyCode }) => {
+              {displayExpenses.map(({ expense, payerDisplayName, payerHasLeftGroup, pendingLocalId, convertedAmount, groupBaseCurrencyCode }) => {
                 const canEdit = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
                 const canDelete = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
                 const canValidate =
@@ -496,7 +496,7 @@ export default function GroupDetailClient({
                         href={`/users/${expense.payerId}`}
                         className="text-foreground underline-offset-4 hover:underline"
                       >
-                        {payerAlias}
+                        {payerDisplayName}
                       </Link>
                       {payerHasLeftGroup ? (
                         <Badge variant="outline" className="ml-2">
@@ -537,7 +537,7 @@ export default function GroupDetailClient({
                         {canEdit && members ? (
                           <ExpenseFormDialog
                             groupId={groupId}
-                            members={members.map((m) => ({ userId: m.userId, alias: m.alias }))}
+                            members={members.map((m) => ({ userId: m.userId, displayName: m.displayName }))}
                             subgroups={subgroups ?? []}
                             onSaved={load}
                             editExpenseId={expense.id}
@@ -564,7 +564,7 @@ export default function GroupDetailClient({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Alias</TableHead>
+              <TableHead>Nombre</TableHead>
               <TableHead>Rol</TableHead>
               {isAdmin ? <TableHead className="text-right">Acciones</TableHead> : null}
             </TableRow>
@@ -578,9 +578,9 @@ export default function GroupDetailClient({
                     className="flex items-center gap-2 text-foreground underline-offset-4 hover:underline"
                   >
                     <Avatar className="h-7 w-7">
-                      <AvatarFallback>{member.alias.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      <AvatarFallback>{member.displayName.slice(0, 2).toUpperCase()}</AvatarFallback>
                     </Avatar>
-                    {member.alias}
+                    {member.displayName}
                   </Link>
                 </TableCell>
                 <TableCell>

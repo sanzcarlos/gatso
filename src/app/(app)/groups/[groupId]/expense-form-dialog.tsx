@@ -30,7 +30,7 @@ import { Plus, Pencil } from "lucide-react";
 
 interface Member {
   userId: string;
-  alias: string;
+  displayName: string;
   /** Fase 8: true si ya no es miembro actual del grupo (dato historico). */
   hasLeftGroup?: boolean;
 }
@@ -139,10 +139,10 @@ export function ExpenseFormDialog({
           subgroupId: string | null;
           splitMethod: SplitMethod;
         };
-        const payerAlias = data.payerAlias as string;
+        const payerDisplayName = data.payerDisplayName as string;
         const shares = data.shares as {
           userId: string;
-          alias: string;
+          displayName: string;
           shareAmount: string;
           sharePercentage: string | null;
           hasLeftGroup: boolean;
@@ -160,12 +160,12 @@ export function ExpenseFormDialog({
         const knownUserIds = new Set(members.map((m) => m.userId));
         const formerMembers: Member[] = [];
         if (!knownUserIds.has(expense.payerId)) {
-          formerMembers.push({ userId: expense.payerId, alias: payerAlias, hasLeftGroup: true });
+          formerMembers.push({ userId: expense.payerId, displayName: payerDisplayName, hasLeftGroup: true });
           knownUserIds.add(expense.payerId);
         }
         for (const share of shares) {
           if (!knownUserIds.has(share.userId)) {
-            formerMembers.push({ userId: share.userId, alias: share.alias, hasLeftGroup: true });
+            formerMembers.push({ userId: share.userId, displayName: share.displayName, hasLeftGroup: true });
             knownUserIds.add(share.userId);
           }
         }
@@ -416,7 +416,7 @@ export function ExpenseFormDialog({
                   <SelectContent>
                     {effectiveMembers.map((member) => (
                       <SelectItem key={member.userId} value={member.userId}>
-                        {member.alias}
+                        {member.displayName}
                         {member.hasLeftGroup ? " (ha abandonado el grupo)" : ""}
                       </SelectItem>
                     ))}
@@ -469,10 +469,10 @@ export function ExpenseFormDialog({
                     <Switch
                       checked={row.included}
                       onCheckedChange={() => toggleIncluded(member.userId)}
-                      aria-label={`Incluir a ${member.alias}`}
+                      aria-label={`Incluir a ${member.displayName}`}
                     />
                     <span className="flex-1 text-sm text-foreground">
-                      {member.alias}
+                      {member.displayName}
                       {member.hasLeftGroup ? (
                         <span className="ml-2 text-xs text-muted-foreground">(ha abandonado el grupo)</span>
                       ) : null}

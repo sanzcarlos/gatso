@@ -12,10 +12,11 @@ export const runtime = "nodejs";
 /**
  * Recuperacion de cuenta sin depender de datos sensibles (sin email/telefono).
  *
- * Flujo: el usuario aporta su alias + el codigo de recuperacion de un solo
- * uso (entregado una vez al registrarse) + una nueva contrasena. Si es
- * correcto, se actualiza la contrasena y se rota el codigo de recuperacion
- * (se invalida el anterior y se entrega uno nuevo, mostrado una sola vez).
+ * Flujo: el usuario aporta su username + el codigo de recuperacion de un
+ * solo uso (entregado una vez al registrarse) + una nueva contrasena. Si
+ * es correcto, se actualiza la contrasena y se rota el codigo de
+ * recuperacion (se invalida el anterior y se entrega uno nuevo, mostrado
+ * una sola vez).
  *
  * Trade-off documentado (ver PROGRESS.md): si el usuario pierde el codigo de
  * recuperacion Y olvida su contrasena, no hay ninguna otra via de recuperar
@@ -29,33 +30,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Datos invalidos" }, { status: 400 });
   }
 
-  const { alias, recoveryCode, newPassword } = parsed.data;
+  const { username, recoveryCode, newPassword } = parsed.data;
   const genericError = NextResponse.json(
-    { error: "Alias o codigo de recuperacion incorrectos" },
+    { error: "Usuario o codigo de recuperacion incorrectos" },
     { status: 401 },
   );
 
   try {
-    await enforceAuthRateLimit(alias, "recover");
+    await enforceAuthRateLimit(username, "recover");
   } catch (error) {
     return errorResponse(error);
   }
 
-  const [user] = await db.select().from(users).where(eq(users.alias, alias)).limit(1);
+  const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
 
   if (!user || !user.recoveryCodeHash) {
     await verifySecret(DUMMY_HASH, normalizeRecoveryCode(recoveryCode));
-    await recordAuthAttempt(alias, "recover", false);
+    await recordAuthAttempt(username, "recover", false);
     return genericError;
   }
 
   const valid = await verifySecret(user.recoveryCodeHash, normalizeRecoveryCode(recoveryCode));
   if (!valid) {
-    await recordAuthAttempt(alias, "recover", false);
+    await recordAuthAttempt(username, "recover", false);
     return genericError;
   }
 
-  await recordAuthAttempt(alias, "recover", true);
+  await recordAuthAttempt(username, "recover", true);
 
   const newPasswordHash = await hashSecret(newPassword);
   const newRecoveryCode = generateRecoveryCode();

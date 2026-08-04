@@ -30,7 +30,7 @@ import { GroupSummaryCard, type SummaryExpense } from "@/components/group-summar
 
 interface SubgroupDetail {
   subgroup: { id: string; name: string; groupId: string };
-  members: { userId: string; alias: string }[];
+  members: { userId: string; displayName: string }[];
   groupBaseCurrencyCode?: string;
 }
 
@@ -47,7 +47,7 @@ interface ExpenseRow {
     payerId: string;
     status: "confirmed" | "modified" | "pending_validation";
   };
-  payerAlias: string;
+  payerDisplayName: string;
   payerHasLeftGroup: boolean;
   groupBaseCurrencyCode?: string;
   convertedAmount?: string | null;
@@ -197,7 +197,7 @@ export default function SubgroupDetailClient({
         payerId: pending.payload.payerId,
         status: "confirmed",
       },
-      payerAlias: detail?.members.find((m) => m.userId === pending.payload.payerId)?.alias ?? "?",
+      payerDisplayName: detail?.members.find((m) => m.userId === pending.payload.payerId)?.displayName ?? "?",
       payerHasLeftGroup: false,
       pendingLocalId: pending.localId,
     }));
@@ -322,9 +322,9 @@ export default function SubgroupDetailClient({
           <Link key={member.userId} href={`/users/${member.userId}`}>
             <Badge variant="outline" className="flex items-center gap-1.5 hover:bg-accent">
               <Avatar className="h-4 w-4">
-                <AvatarFallback className="text-[9px]">{member.alias.slice(0, 2).toUpperCase()}</AvatarFallback>
+                <AvatarFallback className="text-[9px]">{member.displayName.slice(0, 2).toUpperCase()}</AvatarFallback>
               </Avatar>
-              {member.alias}
+              {member.displayName}
             </Badge>
           </Link>
         ))}
@@ -333,14 +333,14 @@ export default function SubgroupDetailClient({
       <GroupSummaryCard
         name={detail.subgroup.name}
         scopeLabel="subgrupo"
-        expenses={displayExpenses.map(({ expense, payerAlias, pendingLocalId }) => ({
+        expenses={displayExpenses.map(({ expense, payerDisplayName, pendingLocalId }) => ({
           id: expense.id,
           amount: expense.amount,
           currencyCode: expense.currencyCode,
           description: expense.description,
           notes: expense.notes,
           expenseDate: expense.expenseDate,
-          payerAlias,
+          payerDisplayName,
           payerId: expense.payerId,
           createdBy: expense.createdBy,
           status: expense.status,
@@ -350,7 +350,7 @@ export default function SubgroupDetailClient({
         stats={stats}
         baseCurrencyCode={statsBaseCurrency?.code ?? detail.groupBaseCurrencyCode ?? "EUR"}
         totalConvertedCents={statsBaseCurrency?.totalConvertedCents ?? null}
-        participants={members.map((member) => ({ userId: member.userId, alias: member.alias }))}
+        participants={members.map((member) => ({ userId: member.userId, displayName: member.displayName }))}
         settlements={settlements}
         convertedOverall={convertedOverall}
         settlementGroupId={groupId}
@@ -414,7 +414,7 @@ export default function SubgroupDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayExpenses.map(({ expense, payerAlias, payerHasLeftGroup, pendingLocalId, convertedAmount, groupBaseCurrencyCode }) => {
+                {displayExpenses.map(({ expense, payerDisplayName, payerHasLeftGroup, pendingLocalId, convertedAmount, groupBaseCurrencyCode }) => {
                   const canEdit = !pendingLocalId && (isAdmin || expense.createdBy === currentUserId);
                   const canValidate =
                     !pendingLocalId && expense.status === "pending_validation" && expense.createdBy === currentUserId;
@@ -427,7 +427,7 @@ export default function SubgroupDetailClient({
                           href={`/users/${expense.payerId}`}
                           className="text-foreground underline-offset-4 hover:underline"
                         >
-                          {payerAlias}
+                          {payerDisplayName}
                         </Link>
                         {payerHasLeftGroup ? (
                           <Badge variant="outline" className="ml-2">

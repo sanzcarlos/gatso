@@ -252,7 +252,7 @@ export async function listExpenses(groupId: string, userId: string, options: Lis
     db
       .select({
         expense: expenses,
-        payerAlias: users.alias,
+        payerDisplayName: users.displayName,
         payerMembershipId: memberships.id,
       })
       .from(expenses)
@@ -303,7 +303,7 @@ export async function listExpenses(groupId: string, userId: string, options: Lis
 
 export interface MemberAmount {
   userId: string;
-  alias: string;
+  displayName: string;
   totalCents: number;
   /** Fase 8: true si el usuario ya no es miembro actual del grupo. */
   hasLeftGroup: boolean;
@@ -373,13 +373,13 @@ export async function getExpenseStats(
   for (const e of expenseRows) involvedUserIds.add(e.payerId);
   for (const s of shareRows) involvedUserIds.add(s.userId);
 
-  const aliasRows = involvedUserIds.size
+  const displayNameRows = involvedUserIds.size
     ? await db
-        .select({ id: users.id, alias: users.alias })
+        .select({ id: users.id, displayName: users.displayName })
         .from(users)
         .where(inArray(users.id, [...involvedUserIds]))
     : [];
-  const aliasByUserId = new Map(aliasRows.map((u) => [u.id, u.alias]));
+  const displayNameByUserId = new Map(displayNameRows.map((u) => [u.id, u.displayName]));
 
   const currentMembers = await db
     .select({ userId: memberships.userId })
@@ -412,7 +412,7 @@ export async function getExpenseStats(
     return [...byMember.entries()]
       .map(([memberId, totalCents]) => ({
         userId: memberId,
-        alias: aliasByUserId.get(memberId) ?? "Usuario",
+        displayName: displayNameByUserId.get(memberId) ?? "Usuario",
         totalCents,
         hasLeftGroup: !currentMemberIds.has(memberId),
       }))
@@ -460,7 +460,7 @@ export async function getExpenseDetail(groupId: string, expenseId: string, userI
   const [row] = await db
     .select({
       expense: expenses,
-      payerAlias: users.alias,
+      payerDisplayName: users.displayName,
       payerMembershipId: memberships.id,
     })
     .from(expenses)
@@ -473,7 +473,7 @@ export async function getExpenseDetail(groupId: string, expenseId: string, userI
   const shareRows = await db
     .select({
       userId: expenseShares.userId,
-      alias: users.alias,
+      displayName: users.displayName,
       shareAmount: expenseShares.shareAmount,
       sharePercentage: expenseShares.sharePercentage,
       membershipId: memberships.id,
@@ -485,7 +485,7 @@ export async function getExpenseDetail(groupId: string, expenseId: string, userI
 
   return {
     expense: row.expense,
-    payerAlias: row.payerAlias,
+    payerDisplayName: row.payerDisplayName,
     payerHasLeftGroup: row.payerMembershipId === null,
     shares: shareRows.map(({ membershipId, ...rest }) => ({ ...rest, hasLeftGroup: membershipId === null })),
   };
@@ -678,7 +678,7 @@ export async function getExpenseHistory(groupId: string, expenseId: string, user
       id: auditLogs.id,
       action: auditLogs.action,
       actorUserId: auditLogs.actorUserId,
-      actorAlias: users.alias,
+      actorDisplayName: users.displayName,
       beforeData: auditLogs.beforeData,
       afterData: auditLogs.afterData,
       createdAt: auditLogs.createdAt,

@@ -3,7 +3,7 @@ import { and, count, eq, isNull } from "drizzle-orm";
 import { db, groupInvitations, groups, memberships, users, externalEntityMappings } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
-import { createUserWithAlias } from "@/lib/users/service";
+import { createUserWithUsername } from "@/lib/users/service";
 import { requireMembership } from "./service";
 import { addUserToAllGroupSubgroups } from "./subgroup-service";
 import { recordAuditLog } from "@/lib/audit/service";
@@ -20,7 +20,7 @@ const TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789
 const generateToken = customAlphabet(TOKEN_ALPHABET, 32);
 
 export interface CreateGroupInvitationOptions {
-  suggestedAlias?: string | null;
+  suggestedDisplayName?: string | null;
   /** Fase 11 ampliada: vincula la invitacion a un participante externo (ej. Splitwise) para poder auto-resolverlo al aceptarse. */
   externalProvider?: string | null;
   externalParticipantId?: string | null;
@@ -32,11 +32,11 @@ export interface CreateGroupInvitationOptions {
  * un solo uso que caduca a las 24 horas, pensado para invitar a una
  * persona concreta que todavia no tiene cuenta en la aplicacion.
  *
- * `suggestedAlias` (opcional, Fase 11): nombre propuesto para la persona
- * invitada (ej. su nombre en Splitwise al importar un grupo), mostrado
- * como valor prellenado -pero editable- en el formulario de aceptacion;
- * nunca crea la cuenta, la persona invitada sigue eligiendo su propio
- * alias real al aceptar.
+ * `suggestedDisplayName` (opcional, Fase 11): nombre propuesto para la
+ * persona invitada (ej. su nombre en Splitwise al importar un grupo),
+ * mostrado como valor prellenado -pero editable- en el formulario de
+ * aceptacion; nunca crea la cuenta, la persona invitada sigue eligiendo
+ * su propio username, displayName y contrasena al aceptar.
  */
 export async function createGroupInvitation(
   groupId: string,
@@ -46,8 +46,8 @@ export async function createGroupInvitation(
   await requireMembership(groupId, actingUserId);
   await enforceInvitationCreateRateLimit(actingUserId);
 
-  // Compatibilidad: admite el uso previo (tercer parametro = suggestedAlias suelto).
-  const normalized: CreateGroupInvitationOptions = typeof options === "string" || options === null ? { suggestedAlias: options } : options;
+  // Compatibilidad: admite el uso previo (tercer parametro = suggestedDisplayName suelto).
+  const normalized: CreateGroupInvitationOptions = typeof options === "string" || options === null ? { suggestedDisplayName: options } : options;
 
   const [invitation] = await db
     .insert(groupInvitations)
@@ -55,7 +55,7 @@ export async function createGroupInvitation(
       groupId,
       token: generateToken(),
       createdBy: actingUserId,
-      suggestedAlias: normalized.suggestedAlias?.trim() || null,
+      suggestedDisplayName: normalized.suggestedDisplayName?.trim() || null,
       externalProvider: normalized.externalProvider ?? null,
       externalParticipantId: normalized.externalParticipantId ?? null,
       expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
@@ -72,11 +72,11 @@ export async function listGroupInvitations(groupId: string, actingUserId: string
     .select({
       id: groupInvitations.id,
       token: groupInvitations.token,
-      suggestedAlias: groupInvitations.suggestedAlias,
+      suggestedDisplayName: groupInvitations.suggestedDisplayName,
       expiresAt: groupInvitations.expiresAt,
       usedAt: groupInvitations.usedAt,
       createdAt: groupInvitations.createdAt,
-      createdByAlias: users.alias,
+      createdByDisplayName: users.displayName,
     })
     .from(groupInvitations)
     .innerJoin(users, eq(users.id, groupInvitations.createdBy))
@@ -162,18 +162,27 @@ export async function getInvitationPreview(token: string) {
   return {
     groupName: row.groupName,
     expiresAt: row.invitation.expiresAt,
-    suggestedAlias: row.invitation.suggestedAlias,
+    suggestedDisplayName: row.invitation.suggestedDisplayName,
   };
 }
 
 /**
- * Acepta una invitacion: crea el usuario (alias + contrasena elegidos por
- * la persona invitada) y lo anade como miembro del grupo, todo en una
- * transaccion con la fila de invitacion bloqueada (`for("update")`) para
- * evitar que el mismo enlace de un solo uso se consuma dos veces en
- * paralelo.
+ * Acepta una invitacion: crea el usuario (username + contrasena elegidos
+ * por la persona invitada, con un nombre visible inicial) y lo anade como
+ * miembro del grupo, todo en una transaccion con la fila de invitacion
+ * bloqueada (`for("update")`) para evitar que el mismo enlace de un solo
+ * uso se consuma dos veces en paralelo.
+ *
+ * `displayName` es opcional: si no se indica, se usa `suggestedDisplayName`
+ * de la invitacion (si la hubiera) o el propio `username` como nombre
+ * visible inicial (ver `createUserWithUsername`).
  */
-export async function acceptGroupInvitation(token: string, alias: string, password: string) {
+export async function acceptGroupInvitation(
+  token: string,
+  username: string,
+  password: string,
+  displayName?: string | null,
+) {
   await enforceInvitationAcceptRateLimit();
   try {
     return await db.transaction(async (tx) => {
@@ -197,7 +206,7 @@ export async function acceptGroupInvitation(token: string, alias: string, passwo
         throw new AppError(409, `El grupo ha alcanzado el limite de ${group.maxMembers} miembros`, "group_full");
       }
 
-      const { user } = await createUserWithAlias(alias, password, tx);
+      const { user } = await createUserWithUsername(username, password, displayName ?? invitation.suggestedDisplayName, tx);
 
       let membershipId: string | undefined;
       try {
@@ -255,7 +264,7 @@ export async function acceptGroupInvitation(token: string, alias: string, passwo
           .onConflictDoNothing();
       }
 
-      const sessionToken = await createSessionToken({ userId: user.id, alias: user.alias });
+      const sessionToken = await createSessionToken({ userId: user.id, username: user.username });
       await setSessionCookie(sessionToken);
 
       return { user, group };

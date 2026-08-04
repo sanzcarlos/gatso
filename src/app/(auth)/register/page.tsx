@@ -18,7 +18,8 @@ import {
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [alias, setAlias] = useState("");
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
@@ -31,7 +32,7 @@ export default function RegisterPage() {
     try {
       const response = await apiFetch("/api/auth/register", {
         method: "POST",
-        body: JSON.stringify({ alias, password }),
+        body: JSON.stringify({ username, displayName: displayName.trim() || undefined, password }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -72,20 +73,32 @@ export default function RegisterPage() {
     <Card className="shadow-lg">
       <CardHeader className="pb-5">
         <CardTitle className="text-2xl">Crea tu cuenta</CardTitle>
-        <CardDescription>Sin email ni datos personales, solo un alias.</CardDescription>
+        <CardDescription>Sin email ni datos personales, solo un usuario.</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="alias">Alias</Label>
+            <Label htmlFor="username">Usuario</Label>
             <Input
-              id="alias"
-              value={alias}
-              onChange={(e) => setAlias(e.target.value)}
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               minLength={3}
               maxLength={32}
               required
             />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="displayName">Nombre visible (opcional)</Label>
+            <Input
+              id="displayName"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={64}
+            />
+            <p className="text-xs text-muted-foreground">
+              Se mostrara a otras personas de tus grupos. Si lo dejas en blanco, se usara tu usuario.
+            </p>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="password">Contrasena</Label>

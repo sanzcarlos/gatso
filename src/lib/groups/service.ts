@@ -198,7 +198,7 @@ export async function listMembers(groupId: string, userId: string) {
   return db
     .select({
       userId: memberships.userId,
-      alias: users.alias,
+      displayName: users.displayName,
       role: memberships.role,
       joinedAt: memberships.joinedAt,
     })

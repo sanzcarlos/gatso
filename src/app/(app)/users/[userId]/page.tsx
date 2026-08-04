@@ -12,5 +12,5 @@ export default async function UserProfilePage({ params }: PageProps) {
 
   const { userId } = await params;
 
-  return <UserProfileClient userId={userId} />;
+  return <UserProfileClient userId={userId} currentUserId={session.userId} />;
 }

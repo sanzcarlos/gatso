@@ -19,7 +19,7 @@ interface HistoryEntry {
   id: string;
   action: "create" | "update" | "delete";
   actorUserId: string;
-  actorAlias: string;
+  actorDisplayName: string;
   createdAt: string;
   beforeData: unknown;
   afterData: { validated?: boolean } | null;
@@ -81,7 +81,7 @@ export function ExpenseHistoryDialog({ groupId, expenseId }: { groupId: string; 
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary">{ACTION_LABEL[entry.action]}</Badge>
                     <span className="text-sm text-foreground">
-                      <strong>{entry.actorAlias}</strong> {describeEntry(entry)}
+                      <strong>{entry.actorDisplayName}</strong> {describeEntry(entry)}
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground">

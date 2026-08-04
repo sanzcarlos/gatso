@@ -19,15 +19,16 @@ async function getConfigNumber(key: string, fallback: number): Promise<number> {
 
 /**
  * Mitigacion de fuerza bruta (Fase 4) para login y recuperacion de cuenta:
- * cuenta los intentos fallidos recientes de ese alias (ventana configurable
- * via `app_config`, 15 minutos por defecto) y bloquea temporalmente
- * (HTTP 429) tras superar el limite (10 intentos por defecto). Se aplica
- * *antes* de comprobar si el alias existe realmente, y se registra un
- * intento fallido tanto si el alias no existe como si la contrasena/codigo
- * es incorrecto, para no crear un canal lateral que revele que alias
- * existen segun cuando empieza a aparecer el 429.
+ * cuenta los intentos fallidos recientes de ese username (ventana
+ * configurable via `app_config`, 15 minutos por defecto) y bloquea
+ * temporalmente (HTTP 429) tras superar el limite (10 intentos por
+ * defecto). Se aplica *antes* de comprobar si el username existe
+ * realmente, y se registra un intento fallido tanto si el username no
+ * existe como si la contrasena/codigo es incorrecto, para no crear un
+ * canal lateral que revele que usuarios existen segun cuando empieza a
+ * aparecer el 429.
  */
-export async function enforceAuthRateLimit(alias: string, action: AuthAction): Promise<void> {
+export async function enforceAuthRateLimit(username: string, action: AuthAction): Promise<void> {
   const maxAttempts = await getConfigNumber(MAX_ATTEMPTS_CONFIG_KEY, DEFAULT_MAX_ATTEMPTS);
   const windowSeconds = await getConfigNumber(WINDOW_CONFIG_KEY, DEFAULT_WINDOW_SECONDS);
   const since = new Date(Date.now() - windowSeconds * 1000);
@@ -37,7 +38,7 @@ export async function enforceAuthRateLimit(alias: string, action: AuthAction): P
     .from(authAttempts)
     .where(
       and(
-        eq(authAttempts.alias, alias),
+        eq(authAttempts.username, username),
         eq(authAttempts.action, action),
         eq(authAttempts.success, false),
         gte(authAttempts.createdAt, since),
@@ -49,6 +50,6 @@ export async function enforceAuthRateLimit(alias: string, action: AuthAction): P
   }
 }
 
-export async function recordAuthAttempt(alias: string, action: AuthAction, success: boolean): Promise<void> {
-  await db.insert(authAttempts).values({ alias, action, success });
+export async function recordAuthAttempt(username: string, action: AuthAction, success: boolean): Promise<void> {
+  await db.insert(authAttempts).values({ username, action, success });
 }

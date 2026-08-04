@@ -14,7 +14,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InviteMemberDialog } from "@/app/(app)/groups/[groupId]/invite-member-dialog";
-import { suggestAliasFromDisplayName } from "@/lib/imports/splitwise/alias-suggestion";
 
 interface SplitwiseGroupOption {
   externalId: string;
@@ -43,7 +42,7 @@ interface GatsoGroupOption {
 
 interface KnownUser {
   userId: string;
-  alias: string;
+  displayName: string;
 }
 
 interface ImportJob {
@@ -242,7 +241,7 @@ export default function SplitwiseImportClient() {
       const response = await apiFetch("/api/users/known");
       if (!response.ok) return;
       const data = await response.json();
-      setKnownUsers(data.users.map((u: { id: string; alias: string }) => ({ userId: u.id, alias: u.alias })));
+      setKnownUsers(data.users.map((u: { id: string; displayName: string }) => ({ userId: u.id, displayName: u.displayName })));
     } finally {
       setLoadingKnownUsers(false);
     }
@@ -633,7 +632,7 @@ export default function SplitwiseImportClient() {
                       {!mappings[participant.externalId] ? (
                         <InviteMemberDialog
                           groupId={targetGroupId}
-                          initialSuggestedAlias={suggestAliasFromDisplayName(participant.displayName)}
+                          initialSuggestedDisplayName={participant.displayName}
                           triggerLabel="Invitar"
                         />
                       ) : null}
@@ -647,7 +646,7 @@ export default function SplitwiseImportClient() {
                         <SelectContent>
                           {(knownUsers ?? []).map((user) => (
                             <SelectItem key={user.userId} value={user.userId}>
-                              {user.alias}
+                              {user.displayName}
                             </SelectItem>
                           ))}
                         </SelectContent>

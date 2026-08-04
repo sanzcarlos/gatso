@@ -20,14 +20,15 @@ import {
 interface Preview {
   groupName: string;
   expiresAt: string;
-  suggestedAlias: string | null;
+  suggestedDisplayName: string | null;
 }
 
 export default function InviteAcceptClient({ token }: { token: string }) {
   const router = useRouter();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [alias, setAlias] = useState("");
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -40,7 +41,7 @@ export default function InviteAcceptClient({ token }: { token: string }) {
         return;
       }
       setPreview(data as Preview);
-      if (data.suggestedAlias) setAlias(data.suggestedAlias);
+      if (data.suggestedDisplayName) setDisplayName(data.suggestedDisplayName);
     });
   }, [token]);
 
@@ -51,7 +52,7 @@ export default function InviteAcceptClient({ token }: { token: string }) {
     try {
       const response = await apiFetch(`/api/invitations/${token}/accept`, {
         method: "POST",
-        body: JSON.stringify({ alias, password }),
+        body: JSON.stringify({ username, displayName: displayName.trim() || undefined, password }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -100,23 +101,32 @@ export default function InviteAcceptClient({ token }: { token: string }) {
       <CardHeader>
         <CardTitle>Te han invitado a &quot;{preview.groupName}&quot;</CardTitle>
         <CardDescription>
-          Crea tu cuenta (solo alias y contrasena) para unirte directamente al grupo. Este enlace
+          Crea tu cuenta (usuario y contrasena) para unirte directamente al grupo. Este enlace
           caduca el {new Date(preview.expiresAt).toLocaleString()}.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="invite-alias">Alias</Label>
+            <Label htmlFor="invite-username">Usuario</Label>
             <Input
-              id="invite-alias"
-              value={alias}
-              onChange={(e) => setAlias(e.target.value)}
+              id="invite-username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               minLength={3}
               maxLength={32}
               required
             />
-            {preview.suggestedAlias ? (
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="invite-display-name">Nombre visible (opcional)</Label>
+            <Input
+              id="invite-display-name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={64}
+            />
+            {preview.suggestedDisplayName ? (
               <p className="text-xs text-muted-foreground">
                 Nombre sugerido por quien te invito: puedes cambiarlo antes de continuar.
               </p>

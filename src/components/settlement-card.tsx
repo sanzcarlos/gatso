@@ -25,17 +25,17 @@ const SETTLEMENT_PAGE_SIZE = 5;
 
 export interface SettlementBalance {
   userId: string;
-  alias: string;
+  displayName: string;
   netCents: number;
   hasLeftGroup: boolean;
 }
 
 export interface SettlementTransaction {
   fromUserId: string;
-  fromAlias: string;
+  fromDisplayName: string;
   fromHasLeftGroup: boolean;
   toUserId: string;
-  toAlias: string;
+  toDisplayName: string;
   toHasLeftGroup: boolean;
   amountCents: number;
 }
@@ -62,11 +62,11 @@ function formatMoney(cents: number, currencyCode: string): string {
   }
 }
 
-function AliasLink({ userId, alias, hasLeftGroup }: { userId: string; alias: string; hasLeftGroup: boolean }) {
+function DisplayNameLink({ userId, displayName, hasLeftGroup }: { userId: string; displayName: string; hasLeftGroup: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <Link href={`/users/${userId}`} className="text-foreground underline-offset-4 hover:underline">
-        {alias}
+        {displayName}
       </Link>
       {hasLeftGroup ? <Badge variant="outline">Ha abandonado el grupo</Badge> : null}
     </span>
@@ -139,12 +139,12 @@ function MarkPaidButton({ groupId, subgroupId, currencyCode, transaction, onPaid
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 text-sm">
               <p className="text-xs text-muted-foreground">De</p>
-              <AliasLink userId={transaction.fromUserId} alias={transaction.fromAlias} hasLeftGroup={transaction.fromHasLeftGroup} />
+              <DisplayNameLink userId={transaction.fromUserId} displayName={transaction.fromDisplayName} hasLeftGroup={transaction.fromHasLeftGroup} />
             </div>
             <ArrowRight className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
             <div className="min-w-0 text-right text-sm">
               <p className="text-xs text-muted-foreground">Para</p>
-              <AliasLink userId={transaction.toUserId} alias={transaction.toAlias} hasLeftGroup={transaction.toHasLeftGroup} />
+              <DisplayNameLink userId={transaction.toUserId} displayName={transaction.toDisplayName} hasLeftGroup={transaction.toHasLeftGroup} />
             </div>
           </div>
           <p className="mt-4 border-t border-border pt-3 text-center text-2xl font-bold tracking-tight text-foreground">
@@ -390,9 +390,9 @@ function SettlementDetail({
                     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
                       <div className="min-w-0 text-sm">
                         <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Paga</p>
-                        <AliasLink
+                        <DisplayNameLink
                           userId={transaction.fromUserId}
-                          alias={transaction.fromAlias}
+                          displayName={transaction.fromDisplayName}
                           hasLeftGroup={transaction.fromHasLeftGroup}
                         />
                       </div>
@@ -401,7 +401,7 @@ function SettlementDetail({
                       </span>
                       <div className="min-w-0 text-right text-sm">
                         <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Recibe</p>
-                        <AliasLink userId={transaction.toUserId} alias={transaction.toAlias} hasLeftGroup={transaction.toHasLeftGroup} />
+                        <DisplayNameLink userId={transaction.toUserId} displayName={transaction.toDisplayName} hasLeftGroup={transaction.toHasLeftGroup} />
                       </div>
                     </div>
                     <div className="flex flex-col gap-2 border-t border-border pt-3 sm:min-w-36 sm:items-end sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
@@ -440,7 +440,7 @@ function SettlementDetail({
         <ul className="mt-3 flex flex-col divide-y divide-border border-t border-border pt-1">
           {settlement.balances.map((balance) => (
             <li key={balance.userId} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
-              <AliasLink userId={balance.userId} alias={balance.alias} hasLeftGroup={balance.hasLeftGroup} />
+              <DisplayNameLink userId={balance.userId} displayName={balance.displayName} hasLeftGroup={balance.hasLeftGroup} />
               <span className={balance.netCents > 0 ? "font-semibold text-success" : "font-semibold text-destructive"}>
                 {balance.netCents > 0 ? "+" : "−"}{formatMoney(balance.netCents, settlement.currencyCode)}
               </span>

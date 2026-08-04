@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export interface MemberAmount {
   userId: string;
-  alias: string;
+  displayName: string;
   totalCents: number;
 }
 
@@ -196,7 +196,7 @@ function CurrencyCharts({ stats }: { stats: CurrencyExpenseStats }) {
                 />
                 <YAxis
                   type="category"
-                  dataKey="alias"
+                  dataKey="displayName"
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: "var(--color-foreground)", fontSize: 12, fontWeight: 500 }}
@@ -243,7 +243,7 @@ function ShareChart({
             <Pie
               data={shareData}
               dataKey="amount"
-              nameKey="alias"
+              nameKey="displayName"
               cx="50%"
               cy="50%"
               innerRadius={58}
@@ -276,7 +276,7 @@ function ShareChart({
         {shareData.map((member) => (
           <div key={member.userId} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 text-sm">
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: member.fill }} aria-hidden="true" />
-            <span className="truncate font-medium" title={member.alias}>{member.alias}</span>
+            <span className="truncate font-medium" title={member.displayName}>{member.displayName}</span>
             <span className="text-right">
               <span className="font-semibold tabular-nums">{formatCents(member.totalCents, stats.currencyCode)}</span>
               <span className="ml-2 inline-block min-w-10 text-xs tabular-nums text-muted-foreground">

@@ -6,7 +6,7 @@ import { AppError } from "@/lib/errors";
  * Rate limiting generico por clave arbitraria (backlog: registro, creacion
  * y aceptacion de invitaciones, union a grupos). Distinto de
  * `src/lib/auth/auth-rate-limit.ts` (especifico de login/recover, cuenta
- * solo intentos fallidos por alias): aqui cada caso de uso decide su
+ * solo intentos fallidos por username): aqui cada caso de uso decide su
  * propio `scope`/`key`/limites, pero todos comparten la misma tabla
  * (`rate_limit_attempts`) y el mismo patron de configuracion en runtime
  * via `app_config` (igual que `expense_creation_rate_limit_seconds` o
@@ -14,7 +14,7 @@ import { AppError } from "@/lib/errors";
  *
  * Esta app no almacena direcciones IP por diseno de privacidad (Fase 1),
  * asi que la clave de conteo siempre es algo que la propia app ya conoce
- * de otra forma (un alias elegido, un `userId` autenticado) o, cuando no
+ * de otra forma (un username elegido, un `userId` autenticado) o, cuando no
  * hay ninguna identidad disponible (aceptar una invitacion es una ruta
  * publica sin sesion), una clave fija que aplica un limite global a la
  * accion completa: mas tosco que un limite por IP, pero suficiente para
@@ -63,26 +63,26 @@ export async function recordRateLimitAttempt(scope: string, key: string): Promis
 const GLOBAL_KEY = "global";
 
 // --- Registro de cuenta nueva ---
-// Cuenta intentos (exitosos o no) de registrar el MISMO alias: no evita
-// que se creen muchos alias distintos rapidamente (no hay una identidad
-// previa que limitar sin usar IP), pero anade friccion a intentar
-// squatting/probing repetido de un alias concreto.
+// Cuenta intentos (exitosos o no) de registrar el MISMO username: no
+// evita que se creen muchos usuarios distintos rapidamente (no hay una
+// identidad previa que limitar sin usar IP), pero anade friccion a
+// intentar squatting/probing repetido de un username concreto.
 const REGISTER_SCOPE = "register";
 
-export async function enforceRegistrationRateLimit(alias: string): Promise<void> {
+export async function enforceRegistrationRateLimit(username: string): Promise<void> {
   await enforceKeyedRateLimit({
     scope: REGISTER_SCOPE,
-    key: alias,
+    key: username,
     maxAttemptsConfigKey: "registration_rate_limit_max_attempts",
     windowSecondsConfigKey: "registration_rate_limit_window_seconds",
     defaultMaxAttempts: 5,
     defaultWindowSeconds: 15 * 60,
-    message: "Demasiados intentos de registro con este alias. Intentalo de nuevo en unos minutos.",
+    message: "Demasiados intentos de registro con este usuario. Intentalo de nuevo en unos minutos.",
   });
 }
 
-export async function recordRegistrationAttempt(alias: string): Promise<void> {
-  await recordRateLimitAttempt(REGISTER_SCOPE, alias);
+export async function recordRegistrationAttempt(username: string): Promise<void> {
+  await recordRateLimitAttempt(REGISTER_SCOPE, username);
 }
 
 // --- Creacion de invitaciones personales a grupo ---

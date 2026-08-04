@@ -21,7 +21,7 @@ import { UserPlus, Copy, Trash2 } from "lucide-react";
 interface Invitation {
   id: string;
   token: string;
-  suggestedAlias: string | null;
+  suggestedDisplayName: string | null;
   expiresAt: string;
   usedAt: string | null;
   createdAt: string;
@@ -29,19 +29,19 @@ interface Invitation {
 
 export function InviteMemberDialog({
   groupId,
-  initialSuggestedAlias = "",
+  initialSuggestedDisplayName = "",
   triggerLabel = "Invitar",
 }: {
   groupId: string;
   /** Prellena el campo "nombre sugerido" al abrir el dialogo (ej. participante de Splitwise sin cuenta Gatso, Fase 11). */
-  initialSuggestedAlias?: string;
+  initialSuggestedDisplayName?: string;
   triggerLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [invitations, setInvitations] = useState<Invitation[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
-  const [suggestedAlias, setSuggestedAlias] = useState(initialSuggestedAlias);
+  const [suggestedDisplayName, setSuggestedDisplayName] = useState(initialSuggestedDisplayName);
 
   const load = useCallback(async () => {
     const response = await apiFetch(`/api/groups/${groupId}/invitations`);
@@ -54,9 +54,9 @@ export function InviteMemberDialog({
   useEffect(() => {
     if (open) {
       load();
-      setSuggestedAlias(initialSuggestedAlias);
+      setSuggestedDisplayName(initialSuggestedDisplayName);
     }
-  }, [open, load, initialSuggestedAlias]);
+  }, [open, load, initialSuggestedDisplayName]);
 
   function inviteUrl(token: string) {
     return `${window.location.origin}/invite/${token}`;
@@ -67,7 +67,7 @@ export function InviteMemberDialog({
     try {
       const response = await apiFetch(`/api/groups/${groupId}/invitations`, {
         method: "POST",
-        body: JSON.stringify({ suggestedAlias: suggestedAlias.trim() || undefined }),
+        body: JSON.stringify({ suggestedDisplayName: suggestedDisplayName.trim() || undefined }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -77,7 +77,7 @@ export function InviteMemberDialog({
       const data = await response.json();
       await navigator.clipboard.writeText(inviteUrl(data.invitation.token)).catch(() => {});
       toast.success("Enlace de invitacion copiado al portapapeles");
-      setSuggestedAlias("");
+      setSuggestedDisplayName("");
       await load();
     } finally {
       setCreating(false);
@@ -120,18 +120,18 @@ export function InviteMemberDialog({
         <DialogHeader>
           <DialogTitle>Invitar a alguien nuevo</DialogTitle>
           <DialogDescription>
-            Genera un enlace unico para que una persona sin cuenta cree su alias y contrasena y se
+            Genera un enlace unico para que una persona sin cuenta cree su usuario y contrasena y se
             una directamente a este grupo. Cada enlace caduca a las 24 horas y solo puede usarse
             una vez.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="invite-suggested-alias">Nombre sugerido (opcional)</Label>
+          <Label htmlFor="invite-suggested-display-name">Nombre sugerido (opcional)</Label>
           <Input
-            id="invite-suggested-alias"
-            value={suggestedAlias}
-            onChange={(e) => setSuggestedAlias(e.target.value)}
+            id="invite-suggested-display-name"
+            value={suggestedDisplayName}
+            onChange={(e) => setSuggestedDisplayName(e.target.value)}
             placeholder="Ej. Ana"
             maxLength={64}
           />
@@ -159,8 +159,8 @@ export function InviteMemberDialog({
                         <Badge variant={expired ? "outline" : "secondary"}>
                           {expired ? "Caducada" : "Pendiente"}
                         </Badge>
-                        {invitation.suggestedAlias ? (
-                          <span className="text-xs font-medium text-foreground">{invitation.suggestedAlias}</span>
+                        {invitation.suggestedDisplayName ? (
+                          <span className="text-xs font-medium text-foreground">{invitation.suggestedDisplayName}</span>
                         ) : null}
                       </div>
                       <span className="text-xs text-muted-foreground">

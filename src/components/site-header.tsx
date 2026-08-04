@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 interface SiteHeaderProps {
-  session: { userId: string; alias: string; isPlatformAdmin?: boolean } | null;
+  session: { userId: string; username: string; displayName: string; isPlatformAdmin?: boolean } | null;
 }
 
 export function SiteHeader({ session }: SiteHeaderProps) {
@@ -81,7 +81,7 @@ export function SiteHeader({ session }: SiteHeaderProps) {
               <NotificationsBell />
               <span className="hidden text-sm text-muted-foreground lg:inline">
                 <Link href={`/users/${session.userId}`} className="rounded-lg px-2 py-1 font-medium hover:bg-muted hover:text-foreground">
-                  {session.alias}
+                  {session.displayName}
                 </Link>
               </span>
               <Button className="hidden md:inline-flex" variant="ghost" size="icon" aria-label="Cerrar sesion" onClick={handleLogout}>
@@ -106,7 +106,7 @@ export function SiteHeader({ session }: SiteHeaderProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
-              {session ? <DropdownMenuLabel>Hola, {session.alias}</DropdownMenuLabel> : <DropdownMenuLabel>Navegacion</DropdownMenuLabel>}
+              {session ? <DropdownMenuLabel>Hola, {session.displayName}</DropdownMenuLabel> : <DropdownMenuLabel>Navegacion</DropdownMenuLabel>}
               <DropdownMenuSeparator />
               {session ? (
                 <>

@@ -10,9 +10,10 @@ interface RouteParams {
 }
 
 /**
- * Ruta publica (sin sesion previa): la persona invitada define su alias y
- * contrasena aqui mismo; si todo es valido, se crea la cuenta, se anade al
- * grupo y se abre sesion automaticamente (misma UX que el registro normal).
+ * Ruta publica (sin sesion previa): la persona invitada define su username,
+ * su nombre visible (opcional) y su contrasena aqui mismo; si todo es
+ * valido, se crea la cuenta, se anade al grupo y se abre sesion
+ * automaticamente (misma UX que el registro normal).
  */
 export async function POST(request: Request, { params }: RouteParams) {
   const { token } = await params;
@@ -23,8 +24,13 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   try {
-    const { user, group } = await acceptGroupInvitation(token, parsed.data.alias, parsed.data.password);
-    return NextResponse.json({ user: { id: user.id, alias: user.alias }, group });
+    const { user, group } = await acceptGroupInvitation(
+      token,
+      parsed.data.username,
+      parsed.data.password,
+      parsed.data.displayName,
+    );
+    return NextResponse.json({ user: { id: user.id, username: user.username, displayName: user.displayName }, group });
   } catch (error) {
     return errorResponse(error);
   }

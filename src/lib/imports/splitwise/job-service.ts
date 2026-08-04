@@ -13,7 +13,6 @@ import { getSplitwiseClientForUser } from "./connection-service";
 import { fetchSplitwiseExpensesPage } from "./paginate";
 import type { SplitwiseClient, SplitwiseExpense, SplitwiseUser } from "./client";
 import { extractSplitwiseShares, chooseSplitForSingleExpense, decomposeMultiPayerExpense, sharesToFixedSplit } from "./mapping";
-import { suggestAliasFromDisplayName } from "./alias-suggestion";
 import { displayNameFor } from "./preview-service";
 import { SPLITWISE_PROVIDER, getEntityMapping, getEntityMappingsFor, recordEntityMapping } from "./mapping-store";
 import { classifySplitwiseExpense, determineFinalJobStatus, type ImportJobCounts } from "./job-status";
@@ -59,7 +58,7 @@ async function insertJobError(
   });
 }
 
-/** Nombres de los miembros del grupo de Splitwise origen, para poder sugerir un alias al generar una invitacion automatica. Una sola llamada HTTP por chunk. */
+/** Nombres de los miembros del grupo de Splitwise origen, para poder sugerir un nombre visible al generar una invitacion automatica. Una sola llamada HTTP por chunk. */
 async function fetchSplitwiseMemberNames(client: SplitwiseClient, sourceGroupExternalId: string): Promise<Map<string, string>> {
   try {
     const { group } = await client.getGroup(sourceGroupExternalId);
@@ -71,7 +70,7 @@ async function fetchSplitwiseMemberNames(client: SplitwiseClient, sourceGroupExt
 
 /**
  * Nombre a mostrar para un participante externo (mensajes de error,
- * alias sugerido de la invitacion). `fetchSplitwiseMemberNames` solo
+ * nombre sugerido de la invitacion). `fetchSplitwiseMemberNames` solo
  * conoce a los miembros ACTUALES del grupo en Splitwise (`get_group`):
  * un participante que ya abandono ese grupo en Splitwise pero tiene
  * gastos historicos ahi no aparece en ese mapa, asi que se usa un
@@ -134,7 +133,7 @@ async function ensurePendingInvitationForParticipant(
 
   const displayName = resolveParticipantName(externalUserId, memberNames);
   const invitation = await createGroupInvitation(job.targetGroupId!, job.userId, {
-    suggestedAlias: suggestAliasFromDisplayName(displayName),
+    suggestedDisplayName: displayName.slice(0, 64),
     externalProvider: SPLITWISE_PROVIDER,
     externalParticipantId: externalUserId,
   });

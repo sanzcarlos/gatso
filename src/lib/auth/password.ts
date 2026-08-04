@@ -28,7 +28,7 @@ export async function verifySecret(hash: string, secret: string): Promise<boolea
  * Hash Argon2id estatico y valido (de un secreto fijo, no reutilizado en
  * ningun sitio) usado como "senuelo" para que las rutas de login y
  * recuperacion tarden aproximadamente lo mismo exista o no el usuario,
- * mitigando ataques de temporizacion que revelarian si un alias existe.
+ * mitigando ataques de temporizacion que revelarian si un usuario existe.
  */
 export const DUMMY_HASH =
   "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQxMjM0NTY3OA$3s2Kn8k8mvVwJv0kj7hFhrx8XnU0j+r2W7xzFbG5m3Y";

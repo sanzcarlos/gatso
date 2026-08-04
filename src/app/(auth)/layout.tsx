@@ -18,7 +18,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             </p>
             <div className="mt-10 grid grid-cols-2 gap-3">
               {[
-                ["Alias privado", "Tu identidad se limita a lo necesario."],
+                ["Usuario privado", "Tu identidad se limita a lo necesario."],
                 ["Calculo exacto", "Importes siempre tratados en centimos."],
                 ["Disponible offline", "Consulta y anota gastos sin cobertura."],
                 ["Auditoria clara", "Los cambios importantes dejan historial."],

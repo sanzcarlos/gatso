@@ -12,7 +12,7 @@ import type { Balance } from "./optimize";
 
 export interface SettlementBalance {
   userId: string;
-  alias: string;
+  displayName: string;
   /** Positivo = le deben dinero, negativo = debe dinero, en centimos. */
   netCents: number;
   hasLeftGroup: boolean;
@@ -20,10 +20,10 @@ export interface SettlementBalance {
 
 export interface SettlementTransaction {
   fromUserId: string;
-  fromAlias: string;
+  fromDisplayName: string;
   fromHasLeftGroup: boolean;
   toUserId: string;
-  toAlias: string;
+  toDisplayName: string;
   toHasLeftGroup: boolean;
   amountCents: number;
 }
@@ -129,10 +129,10 @@ export async function getGroupSettlement(
     for (const memberId of byMember.keys()) involvedUserIds.add(memberId);
   }
 
-  const aliasRows = involvedUserIds.size
-    ? await db.select({ id: users.id, alias: users.alias }).from(users).where(inArray(users.id, [...involvedUserIds]))
+  const displayNameRows = involvedUserIds.size
+    ? await db.select({ id: users.id, displayName: users.displayName }).from(users).where(inArray(users.id, [...involvedUserIds]))
     : [];
-  const aliasByUserId = new Map(aliasRows.map((u) => [u.id, u.alias]));
+  const displayNameByUserId = new Map(displayNameRows.map((u) => [u.id, u.displayName]));
 
   const currentMembers = await db
     .select({ userId: memberships.userId })
@@ -140,8 +140,8 @@ export async function getGroupSettlement(
     .where(eq(memberships.groupId, groupId));
   const currentMemberIds = new Set(currentMembers.map((m) => m.userId));
 
-  function aliasOf(memberId: string): string {
-    return aliasByUserId.get(memberId) ?? "Usuario";
+  function displayNameOf(memberId: string): string {
+    return displayNameByUserId.get(memberId) ?? "Usuario";
   }
   function hasLeftGroupFor(memberId: string): boolean {
     return !currentMemberIds.has(memberId);
@@ -156,7 +156,7 @@ export async function getGroupSettlement(
     const settlementBalances: SettlementBalance[] = balances
       .map((b) => ({
         userId: b.userId,
-        alias: aliasOf(b.userId),
+        displayName: displayNameOf(b.userId),
         netCents: b.netCents,
         hasLeftGroup: hasLeftGroupFor(b.userId),
       }))
@@ -164,10 +164,10 @@ export async function getGroupSettlement(
 
     const transactions: SettlementTransaction[] = minimizeTransactions(balances).map((t) => ({
       fromUserId: t.fromUserId,
-      fromAlias: aliasOf(t.fromUserId),
+      fromDisplayName: displayNameOf(t.fromUserId),
       fromHasLeftGroup: hasLeftGroupFor(t.fromUserId),
       toUserId: t.toUserId,
-      toAlias: aliasOf(t.toUserId),
+      toDisplayName: displayNameOf(t.toUserId),
       toHasLeftGroup: hasLeftGroupFor(t.toUserId),
       amountCents: t.amountCents,
     }));
@@ -197,7 +197,7 @@ export async function getGroupSettlement(
       const settlementBalances: SettlementBalance[] = balances
         .map((b) => ({
           userId: b.userId,
-          alias: aliasOf(b.userId),
+          displayName: displayNameOf(b.userId),
           netCents: b.netCents,
           hasLeftGroup: hasLeftGroupFor(b.userId),
         }))
@@ -205,10 +205,10 @@ export async function getGroupSettlement(
 
       const transactions: SettlementTransaction[] = minimizeTransactions(balances).map((t) => ({
         fromUserId: t.fromUserId,
-        fromAlias: aliasOf(t.fromUserId),
+        fromDisplayName: displayNameOf(t.fromUserId),
         fromHasLeftGroup: hasLeftGroupFor(t.fromUserId),
         toUserId: t.toUserId,
-        toAlias: aliasOf(t.toUserId),
+        toDisplayName: displayNameOf(t.toUserId),
         toHasLeftGroup: hasLeftGroupFor(t.toUserId),
         amountCents: t.amountCents,
       }));
@@ -264,8 +264,8 @@ export async function recordSettlementPayment(
   }
 
   const [[fromUser], [toUser]] = await Promise.all([
-    db.select({ alias: users.alias }).from(users).where(eq(users.id, input.fromUserId)).limit(1),
-    db.select({ alias: users.alias }).from(users).where(eq(users.id, input.toUserId)).limit(1),
+    db.select({ displayName: users.displayName }).from(users).where(eq(users.id, input.fromUserId)).limit(1),
+    db.select({ displayName: users.displayName }).from(users).where(eq(users.id, input.toUserId)).limit(1),
   ]);
   if (!fromUser || !toUser) {
     throw new AppError(404, "Usuario no encontrado", "user_not_found");
@@ -298,7 +298,7 @@ export async function recordSettlementPayment(
 
     const recipients = new Set([input.fromUserId, input.toUserId]);
     recipients.delete(actingUserId);
-    const message = `${fromUser.alias} ha pagado a ${toUser.alias} ${centsToAmount(input.amountCents)} ${input.currencyCode} (${SETTLEMENT_METHOD_LABEL[input.method]}).`;
+    const message = `${fromUser.displayName} ha pagado a ${toUser.displayName} ${centsToAmount(input.amountCents)} ${input.currencyCode} (${SETTLEMENT_METHOD_LABEL[input.method]}).`;
     for (const userId of recipients) {
       await createNotification(tx, {
         userId,

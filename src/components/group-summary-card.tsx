@@ -21,7 +21,7 @@ export interface SummaryExpense {
   description: string;
   notes?: string | null;
   expenseDate: string;
-  payerAlias: string;
+  payerDisplayName: string;
   payerId?: string;
   createdBy?: string;
   status?: "confirmed" | "modified" | "pending_validation";
@@ -31,7 +31,7 @@ export interface SummaryExpense {
 
 export interface SummaryParticipant {
   userId: string;
-  alias: string;
+  displayName: string;
   role?: "admin" | "member";
 }
 
@@ -143,7 +143,7 @@ export function GroupSummaryCard({
       const matchesQuery =
         !normalizedQuery ||
         expense.description.toLocaleLowerCase("es").includes(normalizedQuery) ||
-        expense.payerAlias.toLocaleLowerCase("es").includes(normalizedQuery);
+        expense.payerDisplayName.toLocaleLowerCase("es").includes(normalizedQuery);
       const matchesCurrency = currencyFilter === "all" || expense.currencyCode === currencyFilter;
       const matchesStatus =
         statusFilter === "all" ||
@@ -317,8 +317,8 @@ export function GroupSummaryCard({
           <div className="grid gap-3 sm:grid-cols-2">
             {participants.map((participant) => (
               <div key={participant.userId} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/60 p-3">
-                <Link href={`/users/${participant.userId}`} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">{participant.alias.slice(0, 2).toUpperCase()}</Link>
-                <div className="min-w-0 flex-1"><Link href={`/users/${participant.userId}`} className="truncate font-semibold hover:underline">{participant.alias}</Link>{participant.role ? <p className="text-xs text-muted-foreground">{participant.role === "admin" ? "Administrador" : "Miembro"}</p> : null}</div>
+                <Link href={`/users/${participant.userId}`} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">{participant.displayName.slice(0, 2).toUpperCase()}</Link>
+                <div className="min-w-0 flex-1"><Link href={`/users/${participant.userId}`} className="truncate font-semibold hover:underline">{participant.displayName}</Link>{participant.role ? <p className="text-xs text-muted-foreground">{participant.role === "admin" ? "Administrador" : "Miembro"}</p> : null}</div>
                 {renderParticipantActions?.(participant)}
               </div>
             ))}
@@ -348,5 +348,5 @@ function MetricButton({ title, value, detail, icon, tone, onClick }: { title: st
 }
 
 function ExpenseRow({ expense, showStatus = false }: { expense: SummaryExpense; showStatus?: boolean }) {
-  return <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><ReceiptText className="h-5 w-5" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold">{expense.description}</p>{showStatus ? <Badge variant={statusVariant(expense)}>{statusLabel(expense)}</Badge> : expense.pending ? <Badge variant="warning">Pendiente</Badge> : null}</div><p className="truncate text-xs text-muted-foreground">{expense.payerAlias} · {expense.expenseDate}</p>{showStatus && expense.notes ? <p className="mt-0.5 truncate text-xs text-muted-foreground" title={expense.notes}>💬 {expense.notes}</p> : null}</div><p className="shrink-0 font-semibold tabular-nums">{formatAmount(expense.amount, expense.currencyCode)}</p></div>;
+  return <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><ReceiptText className="h-5 w-5" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold">{expense.description}</p>{showStatus ? <Badge variant={statusVariant(expense)}>{statusLabel(expense)}</Badge> : expense.pending ? <Badge variant="warning">Pendiente</Badge> : null}</div><p className="truncate text-xs text-muted-foreground">{expense.payerDisplayName} · {expense.expenseDate}</p>{showStatus && expense.notes ? <p className="mt-0.5 truncate text-xs text-muted-foreground" title={expense.notes}>💬 {expense.notes}</p> : null}</div><p className="shrink-0 font-semibold tabular-nums">{formatAmount(expense.amount, expense.currencyCode)}</p></div>;
 }
