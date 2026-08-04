@@ -5,8 +5,10 @@ import { toast } from "sonner";
 import { Bug } from "lucide-react";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface AuditEntry {
   id: string;
@@ -31,7 +33,11 @@ const ENTITY_LABEL: Record<string, string> = {
   subgroup: "subgrupo",
   membership: "miembro del grupo",
   subgroup_membership: "miembro del subgrupo",
+  currency: "moneda",
+  settlement_payment: "pago de liquidacion",
 };
+
+const ENTITY_TYPE_OPTIONS = Object.keys(ENTITY_LABEL);
 
 function describeEntry(entry: AuditEntry): string {
   const entityLabel = ENTITY_LABEL[entry.entityType] ?? entry.entityType;
@@ -65,16 +71,61 @@ function describeEntry(entry: AuditEntry): string {
  */
 export function GroupAuditLogCard({ groupId }: { groupId: string }) {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [actionFilter, setActionFilter] = useState<string>("all");
+  const [entityTypeFilter, setEntityTypeFilter] = useState<string>("all");
 
-  async function handleOpenChange(open: boolean) {
-    if (!open || entries !== null) return;
-    const response = await apiFetch(`/api/groups/${groupId}/audit-log`);
+  function buildUrl(action: string, entityType: string, cursor?: string | null) {
+    const searchParams = new URLSearchParams();
+    if (action !== "all") searchParams.set("action", action);
+    if (entityType !== "all") searchParams.set("entityType", entityType);
+    if (cursor) searchParams.set("cursor", cursor);
+    const query = searchParams.toString();
+    return `/api/groups/${groupId}/audit-log${query ? `?${query}` : ""}`;
+  }
+
+  async function loadEntries(action: string, entityType: string) {
+    const response = await apiFetch(buildUrl(action, entityType));
     if (!response.ok) {
       toast.error("No se pudo cargar el historial de auditoria");
       return;
     }
     const data = await response.json();
     setEntries(data.entries);
+    setNextCursor(data.nextCursor ?? null);
+  }
+
+  async function handleOpenChange(open: boolean) {
+    if (!open || entries !== null) return;
+    await loadEntries(actionFilter, entityTypeFilter);
+  }
+
+  async function handleActionFilterChange(value: string) {
+    setActionFilter(value);
+    await loadEntries(value, entityTypeFilter);
+  }
+
+  async function handleEntityTypeFilterChange(value: string) {
+    setEntityTypeFilter(value);
+    await loadEntries(actionFilter, value);
+  }
+
+  async function handleLoadMore() {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const response = await apiFetch(buildUrl(actionFilter, entityTypeFilter, nextCursor));
+      if (!response.ok) {
+        toast.error("No se pudo cargar el historial de auditoria");
+        return;
+      }
+      const data = await response.json();
+      setEntries((current) => [...(current ?? []), ...data.entries]);
+      setNextCursor(data.nextCursor ?? null);
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   return (
@@ -84,26 +135,61 @@ export function GroupAuditLogCard({ groupId }: { groupId: string }) {
       headerExtra={<Bug className="h-4 w-4 text-muted-foreground" aria-hidden="true" />}
       onOpenChange={handleOpenChange}
     >
+      <div className="mb-3 flex flex-wrap gap-2">
+        <Select value={actionFilter} onValueChange={handleActionFilterChange}>
+          <SelectTrigger className="w-40" aria-label="Filtrar por accion">
+            <SelectValue placeholder="Accion" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas las acciones</SelectItem>
+            <SelectItem value="create">Creado</SelectItem>
+            <SelectItem value="update">Editado</SelectItem>
+            <SelectItem value="delete">Borrado</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={entityTypeFilter} onValueChange={handleEntityTypeFilterChange}>
+          <SelectTrigger className="w-48" aria-label="Filtrar por tipo de entidad">
+            <SelectValue placeholder="Tipo de entidad" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los tipos</SelectItem>
+            {ENTITY_TYPE_OPTIONS.map((type) => (
+              <SelectItem key={type} value={type}>
+                {ENTITY_LABEL[type]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       {entries === null ? (
         <Skeleton className="h-24 w-full" />
       ) : entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">Todavia no hay eventos registrados.</p>
       ) : (
-        <ul className="flex max-h-80 flex-col gap-3 overflow-y-auto">
-          {entries.map((entry) => (
-            <li key={entry.id} className="flex items-start justify-between gap-2 rounded-md border border-border p-3">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{ACTION_LABEL[entry.action]}</Badge>
-                  <span className="text-sm text-foreground">
-                    <strong>{entry.actorAlias}</strong> {describeEntry(entry)}
-                  </span>
+        <>
+          <ul className="flex max-h-80 flex-col gap-3 overflow-y-auto">
+            {entries.map((entry) => (
+              <li key={entry.id} className="flex items-start justify-between gap-2 rounded-md border border-border p-3">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{ACTION_LABEL[entry.action]}</Badge>
+                    <span className="text-sm text-foreground">
+                      <strong>{entry.actorAlias}</strong> {describeEntry(entry)}
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</span>
                 </div>
-                <span className="text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+          {nextCursor ? (
+            <div className="mt-3 flex justify-center">
+              <Button variant="outline" size="sm" onClick={handleLoadMore} disabled={loadingMore}>
+                {loadingMore ? "Cargando..." : "Cargar mas"}
+              </Button>
+            </div>
+          ) : null}
+        </>
       )}
     </CollapsibleCard>
   );
