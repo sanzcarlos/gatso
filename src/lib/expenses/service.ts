@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { db, expenses, expenseShares, memberships, subgroupMemberships, users, auditLogs, groups } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
@@ -11,7 +11,20 @@ import { recordAuditLog } from "@/lib/audit/service";
 import { computeShares } from "./split-strategies";
 import { parseAmountToCents, centsToAmount } from "@/lib/money";
 import { enforceExpenseCreationRateLimit } from "./rate-limit";
+import { DEFAULT_PAGE_LIMIT, clampLimit, decodeCursor, encodeCursor, type Page } from "@/lib/pagination";
 import type { CreateExpenseInput } from "@/lib/validation/expenses";
+
+export interface ExpenseListCursor {
+  expenseDate: string;
+  createdAt: string;
+  id: string;
+}
+
+export interface ListExpensesOptions {
+  subgroupId?: string | undefined;
+  cursor?: string | null | undefined;
+  limit?: number | undefined;
+}
 
 /**
  * Verifica que todos los userId referenciados en el reparto (y el pagador)
@@ -187,11 +200,33 @@ export async function createExpense(groupId: string, actingUserId: string, input
  * "42.00 USD (~38.50 EUR)" sin que el cliente tenga que hacer la
  * conversion el mismo.
  */
-export async function listExpenses(groupId: string, userId: string, subgroupId?: string) {
+export async function listExpenses(groupId: string, userId: string, options: ListExpensesOptions = {}) {
   await requireMembership(groupId, userId);
-  const conditions = subgroupId
+  const { subgroupId } = options;
+  const pageSize = clampLimit(options.limit ? String(options.limit) : null, DEFAULT_PAGE_LIMIT);
+  const cursor = decodeCursor<ExpenseListCursor>(options.cursor);
+
+  const scopeCondition = subgroupId
     ? and(eq(expenses.groupId, groupId), eq(expenses.subgroupId, subgroupId))
     : eq(expenses.groupId, groupId);
+
+  // Paginacion por cursor (keyset) sobre (expenseDate, createdAt, id) para
+  // que coincida exactamente con el `orderBy` usado: evita los duplicados
+  // o huecos que produciria un `offset` numerico si se inserta un gasto
+  // nuevo entre dos paginas.
+  const cursorCondition = cursor
+    ? or(
+        lt(expenses.expenseDate, cursor.expenseDate),
+        and(eq(expenses.expenseDate, cursor.expenseDate), lt(expenses.createdAt, new Date(cursor.createdAt))),
+        and(
+          eq(expenses.expenseDate, cursor.expenseDate),
+          eq(expenses.createdAt, new Date(cursor.createdAt)),
+          lt(expenses.id, cursor.id),
+        ),
+      )
+    : undefined;
+
+  const whereCondition = cursorCondition ? and(scopeCondition, cursorCondition) : scopeCondition;
 
   const [rows, [group]] = await Promise.all([
     db
@@ -203,15 +238,18 @@ export async function listExpenses(groupId: string, userId: string, subgroupId?:
       .from(expenses)
       .innerJoin(users, eq(users.id, expenses.payerId))
       .leftJoin(memberships, and(eq(memberships.groupId, groupId), eq(memberships.userId, expenses.payerId)))
-      .where(conditions)
-      .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt)),
+      .where(whereCondition)
+      .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt), desc(expenses.id))
+      .limit(pageSize + 1),
     db.select({ baseCurrencyCode: groups.baseCurrencyCode }).from(groups).where(eq(groups.id, groupId)).limit(1),
   ]);
 
+  const hasMore = rows.length > pageSize;
+  const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
   const baseCurrencyCode = group?.baseCurrencyCode ?? "EUR";
 
-  return Promise.all(
-    rows.map(async ({ payerMembershipId, ...rest }) => {
+  const items = await Promise.all(
+    pageRows.map(async ({ payerMembershipId, ...rest }) => {
       let convertedAmount: string | null = null;
       if (rest.expense.currencyCode !== baseCurrencyCode) {
         try {
@@ -229,6 +267,18 @@ export async function listExpenses(groupId: string, userId: string, subgroupId?:
       };
     }),
   );
+
+  const last = pageRows[pageRows.length - 1];
+  const nextCursor =
+    hasMore && last
+      ? encodeCursor({
+          expenseDate: last.expense.expenseDate,
+          createdAt: last.expense.createdAt.toISOString(),
+          id: last.expense.id,
+        })
+      : null;
+
+  return { items, nextCursor } satisfies Page<(typeof items)[number]>;
 }
 
 export interface MemberAmount {

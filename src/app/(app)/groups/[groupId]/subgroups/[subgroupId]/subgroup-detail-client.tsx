@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { fetchAllExpenses } from "@/lib/expenses/fetch-all";
 import { getCache, setCache } from "@/lib/offline/db";
 import { discardPendingExpense, listPendingExpenses, subscribePendingExpenses, type PendingExpense } from "@/lib/offline/sync";
 import { OfflineBanner } from "@/components/offline-banner";
@@ -99,9 +100,8 @@ export default function SubgroupDetailClient({
 
   const load = useCallback(async () => {
     try {
-      const [detailRes, expensesRes, statsRes, membersRes, settlementRes] = await Promise.all([
+      const [detailRes, statsRes, membersRes, settlementRes] = await Promise.all([
         apiFetch(`/api/groups/${groupId}/subgroups/${subgroupId}`),
-        apiFetch(`/api/groups/${groupId}/expenses?subgroupId=${subgroupId}`),
         apiFetch(`/api/groups/${groupId}/expenses/stats?subgroupId=${subgroupId}`),
         apiFetch(`/api/groups/${groupId}/members`),
         apiFetch(`/api/groups/${groupId}/settlement?subgroupId=${subgroupId}`),
@@ -114,10 +114,10 @@ export default function SubgroupDetailClient({
       const detailData = await detailRes.json();
       setDetail(detailData);
       await setCache(SUBGROUP_DETAIL_CACHE_KEY(subgroupId), detailData);
-      if (expensesRes.ok) {
-        const data = (await expensesRes.json()).expenses;
-        setExpenses(data);
-        await setCache(SUBGROUP_EXPENSES_CACHE_KEY(subgroupId), data);
+      const expensesData = await fetchAllExpenses(groupId, subgroupId);
+      if (expensesData) {
+        setExpenses(expensesData as ExpenseRow[]);
+        await setCache(SUBGROUP_EXPENSES_CACHE_KEY(subgroupId), expensesData);
       }
       if (statsRes.ok) {
         const data = await statsRes.json();

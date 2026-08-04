@@ -15,11 +15,18 @@ export async function GET(request: Request, { params }: RouteParams) {
   if (auth instanceof NextResponse) return auth;
 
   const { groupId } = await params;
-  const subgroupId = new URL(request.url).searchParams.get("subgroupId") ?? undefined;
+  const searchParams = new URL(request.url).searchParams;
+  const subgroupId = searchParams.get("subgroupId") ?? undefined;
+  const cursor = searchParams.get("cursor");
+  const limit = searchParams.get("limit");
 
   try {
-    const expenses = await listExpenses(groupId, auth.userId, subgroupId);
-    return NextResponse.json({ expenses });
+    const { items, nextCursor } = await listExpenses(groupId, auth.userId, {
+      subgroupId,
+      cursor,
+      limit: limit ? Number(limit) : undefined,
+    });
+    return NextResponse.json({ expenses: items, nextCursor });
   } catch (error) {
     return errorResponse(error);
   }

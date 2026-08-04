@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { fetchAllExpenses } from "@/lib/expenses/fetch-all";
 import { getCache, setCache } from "@/lib/offline/db";
 import { discardPendingExpense, listPendingExpenses, subscribePendingExpenses, type PendingExpense } from "@/lib/offline/sync";
 import { OfflineBanner } from "@/components/offline-banner";
@@ -126,11 +127,10 @@ export default function GroupDetailClient({
 
   const load = useCallback(async () => {
     try {
-      const [detailRes, membersRes, subgroupsRes, expensesRes, statsRes, settlementRes] = await Promise.all([
+      const [detailRes, membersRes, subgroupsRes, statsRes, settlementRes] = await Promise.all([
         apiFetch(`/api/groups/${groupId}`),
         apiFetch(`/api/groups/${groupId}/members`),
         apiFetch(`/api/groups/${groupId}/subgroups`),
-        apiFetch(`/api/groups/${groupId}/expenses`),
         apiFetch(`/api/groups/${groupId}/expenses/stats`),
         apiFetch(`/api/groups/${groupId}/settlement`),
       ]);
@@ -149,10 +149,10 @@ export default function GroupDetailClient({
         setSubgroups(data);
         await setCache(SUBGROUPS_CACHE_KEY(groupId), data);
       }
-      if (expensesRes.ok) {
-        const data = (await expensesRes.json()).expenses;
-        setExpenses(data);
-        await setCache(EXPENSES_CACHE_KEY(groupId), data);
+      const expensesData = await fetchAllExpenses(groupId);
+      if (expensesData) {
+        setExpenses(expensesData as ExpenseRow[]);
+        await setCache(EXPENSES_CACHE_KEY(groupId), expensesData);
       }
       if (statsRes.ok) {
         const data = await statsRes.json();
