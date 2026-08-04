@@ -254,17 +254,36 @@ export async function removeMember(groupId: string, actingUserId: string, target
  * Si quien abandona es el unico administrador del grupo y quedan otros
  * miembros, se asciende automaticamente al miembro mas antiguo restante
  * (`pickAdminReplacement`) para que el grupo nunca quede sin
- * administrador mientras tenga miembros. Si es el ultimo miembro del
- * grupo, el grupo queda vacio (no se borra): conserva su historial de
- * gastos y auditoria, y cualquiera que se una despues con el codigo de
- * invitacion pasa a ser el unico miembro (sin rol admin automatico, misma
- * limitacion que hoy tiene `joinGroupByInviteCode`; se puede revisar si
- * se pide explicitamente).
+ * administrador mientras tenga miembros.
+ *
+ * Si es el ULTIMO miembro del grupo, en cambio, no tiene sentido dejar un
+ * grupo vacio para siempre: se borra el grupo completo (grupo, subgrupos,
+ * membresias, gastos y sus repartos, invitaciones y notificaciones
+ * asociadas, pagos de liquidacion), aprovechando los `onDelete: "cascade"`
+ * ya definidos en el esquema sobre `groups.id`. El registro de auditoria
+ * de este borrado se escribe ANTES de ejecutar el `DELETE` (con `groupId`
+ * todavia valido); el propio borrado en cascada anulara despues el
+ * `groupId` de esa fila y de todas las demas que referenciaban este grupo
+ * (permitido explicitamente por el trigger de inmutabilidad, ver
+ * `drizzle/0010_audit_logs_allow_group_id_null.sql`: solo puede cambiar
+ * `group_id` a NULL, nunca el resto del contenido). Si alguien vuelve a
+ * usar el codigo de invitacion de un grupo ya borrado, `joinGroupByInviteCode`
+ * simplemente no lo encuentra (404), igual que con cualquier otro codigo
+ * invalido.
+ *
+ * La fila de `groups` se bloquea (`for("update")`) antes que las de
+ * `memberships`, siguiendo el mismo orden que `joinGroupByInviteCode`:
+ * evita que alguien se una al grupo justo entre que se comprueba que no
+ * quedan mas miembros y que se ejecuta el borrado (ambas operaciones
+ * compiten por el mismo lock de fila, por lo que se serializan).
  */
 export async function leaveGroup(groupId: string, userId: string) {
   const membership = await requireMembership(groupId, userId);
 
   return db.transaction(async (tx) => {
+    const [group] = await tx.select().from(groups).where(eq(groups.id, groupId)).for("update").limit(1);
+    if (!group) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+
     const allMembers = await tx
       .select()
       .from(memberships)
@@ -273,7 +292,22 @@ export async function leaveGroup(groupId: string, userId: string) {
 
     const otherMembers = allMembers.filter((m) => m.userId !== userId);
 
-    if (membership.role === "admin" && otherMembers.length > 0) {
+    if (otherMembers.length === 0) {
+      await recordAuditLog(tx, {
+        actorUserId: userId,
+        action: "delete",
+        entityType: "group",
+        entityId: group.id,
+        groupId,
+        beforeData: { group, leftVoluntarily: true, deletedBecauseLastMember: true },
+      });
+
+      await tx.delete(groups).where(eq(groups.id, groupId));
+
+      return { groupDeleted: true as const, membership };
+    }
+
+    if (membership.role === "admin") {
       const remainingAdmins = otherMembers.filter((m) => m.role === "admin");
       if (remainingAdmins.length === 0) {
         const promoted = pickAdminReplacement(otherMembers);
@@ -316,6 +350,6 @@ export async function leaveGroup(groupId: string, userId: string) {
       beforeData: { ...removed, leftVoluntarily: true },
     });
 
-    return removed;
+    return { groupDeleted: false as const, membership: removed };
   });
 }

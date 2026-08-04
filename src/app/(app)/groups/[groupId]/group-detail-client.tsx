@@ -262,7 +262,11 @@ export default function GroupDetailClient({
   }
 
   async function handleLeaveGroup() {
-    if (!window.confirm("¿Seguro que quieres abandonar este grupo? Tus gastos ya registrados no se borraran.")) {
+    const isLastMember = (members?.length ?? 0) <= 1;
+    const confirmMessage = isLastMember
+      ? "Eres el unico miembro de este grupo. Si lo abandonas se borrara el grupo completo, con sus subgrupos y todos sus gastos. ¿Seguro que quieres continuar?"
+      : "¿Seguro que quieres abandonar este grupo? Tus gastos ya registrados no se borraran.";
+    if (!window.confirm(confirmMessage)) {
       return;
     }
     setLeavingGroup(true);
@@ -273,7 +277,8 @@ export default function GroupDetailClient({
         toast.error(data.error ?? "No se pudo abandonar el grupo");
         return;
       }
-      toast.success("Has abandonado el grupo");
+      const data = await response.json().catch(() => ({}));
+      toast.success(data.groupDeleted ? "Grupo eliminado" : "Has abandonado el grupo");
       router.push("/groups");
     } finally {
       setLeavingGroup(false);

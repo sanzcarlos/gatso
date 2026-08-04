@@ -10,6 +10,15 @@ export const auditActionEnum = pgEnum("audit_action", ["create", "update", "dele
  * `drizzle/0003_audit_logs_immutable.sql`) que rechaza cualquier UPDATE o
  * DELETE sobre esta tabla directamente en la base de datos, con
  * independencia de la capa de aplicacion.
+ *
+ * Excepcion controlada (`drizzle/0010_audit_logs_allow_group_id_null.sql`):
+ * `groupId` usa `ON DELETE SET NULL`, cuya ejecucion interna en Postgres
+ * es un UPDATE; el trigger de UPDATE se reemplazo por una version que
+ * permite EXCLUSIVAMENTE que `group_id` pase de un valor a NULL (nunca al
+ * reves ni a otro valor), bloqueando cualquier otro cambio de contenido
+ * igual que antes. Sin este ajuste, borrar un grupo entero (al abandonarlo
+ * su ultimo miembro, ver `leaveGroup`) fallaria siempre: `createGroup` ya
+ * escribe una fila de auditoria con `groupId` desde el momento de crearlo.
  */
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").primaryKey().defaultRandom(),

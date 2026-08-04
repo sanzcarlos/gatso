@@ -16,8 +16,8 @@ export async function POST(_request: Request, { params }: RouteParams) {
   const { groupId } = await params;
 
   try {
-    const removed = await leaveGroup(groupId, auth.userId);
-    return NextResponse.json({ removed });
+    const { groupDeleted, membership } = await leaveGroup(groupId, auth.userId);
+    return NextResponse.json({ removed: membership, groupDeleted });
   } catch (error) {
     return errorResponse(error);
   }
