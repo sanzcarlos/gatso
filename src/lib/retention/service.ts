@@ -1,6 +1,6 @@
 import { and, eq, lt } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-import { db, authAttempts, notifications, appConfig } from "@/db";
+import { db, authAttempts, notifications, appConfig, rateLimitAttempts } from "@/db";
 
 /**
  * Politica de retencion y limpieza (Backlog: "Definir retencion y
@@ -21,10 +21,12 @@ import { db, authAttempts, notifications, appConfig } from "@/db";
 const AUTH_ATTEMPTS_RETENTION_DAYS_KEY = "auth_attempts_retention_days";
 const NOTIFICATIONS_RETENTION_DAYS_KEY = "read_notifications_retention_days";
 const EXCHANGE_RATES_RETENTION_DAYS_KEY = "exchange_rates_retention_days";
+const RATE_LIMIT_ATTEMPTS_RETENTION_DAYS_KEY = "rate_limit_attempts_retention_days";
 
 const DEFAULT_AUTH_ATTEMPTS_RETENTION_DAYS = 90;
 const DEFAULT_NOTIFICATIONS_RETENTION_DAYS = 60;
 const DEFAULT_EXCHANGE_RATES_RETENTION_DAYS = 90;
+const DEFAULT_RATE_LIMIT_ATTEMPTS_RETENTION_DAYS = 30;
 
 async function getConfigDays(key: string, fallback: number): Promise<number> {
   const [row] = await db.select({ value: appConfig.value }).from(appConfig).where(eq(appConfig.key, key)).limit(1);
@@ -90,18 +92,35 @@ export async function cleanupOldExchangeRates(): Promise<number> {
   return result.rows.length;
 }
 
+/**
+ * Borra intentos de `rate_limit_attempts` (registro, invitaciones, union
+ * a grupos, ver `src/lib/rate-limit/service.ts`) mas antiguos que el
+ * periodo de retencion. Sus ventanas de conteo son cortas (minutos/horas),
+ * asi que un periodo corto de retencion es suficiente.
+ */
+export async function cleanupRateLimitAttempts(): Promise<number> {
+  const retentionDays = await getConfigDays(RATE_LIMIT_ATTEMPTS_RETENTION_DAYS_KEY, DEFAULT_RATE_LIMIT_ATTEMPTS_RETENTION_DAYS);
+  const result = await db
+    .delete(rateLimitAttempts)
+    .where(lt(rateLimitAttempts.createdAt, daysAgo(retentionDays)))
+    .returning({ id: rateLimitAttempts.id });
+  return result.length;
+}
+
 export interface CleanupReport {
   authAttemptsDeleted: number;
   readNotificationsDeleted: number;
   exchangeRatesDeleted: number;
+  rateLimitAttemptsDeleted: number;
 }
 
 /** Ejecuta toda la limpieza de retencion. Pensado para invocarse desde un job programado (ver `src/db/cleanup.ts`). */
 export async function runRetentionCleanup(): Promise<CleanupReport> {
-  const [authAttemptsDeleted, readNotificationsDeleted, exchangeRatesDeleted] = await Promise.all([
+  const [authAttemptsDeleted, readNotificationsDeleted, exchangeRatesDeleted, rateLimitAttemptsDeleted] = await Promise.all([
     cleanupAuthAttempts(),
     cleanupReadNotifications(),
     cleanupOldExchangeRates(),
+    cleanupRateLimitAttempts(),
   ]);
-  return { authAttemptsDeleted, readNotificationsDeleted, exchangeRatesDeleted };
+  return { authAttemptsDeleted, readNotificationsDeleted, exchangeRatesDeleted, rateLimitAttemptsDeleted };
 }

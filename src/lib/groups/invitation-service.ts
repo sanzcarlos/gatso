@@ -8,6 +8,12 @@ import { requireMembership } from "./service";
 import { addUserToAllGroupSubgroups } from "./subgroup-service";
 import { recordAuditLog } from "@/lib/audit/service";
 import { createSessionToken, setSessionCookie } from "@/lib/auth/session";
+import {
+  enforceInvitationAcceptRateLimit,
+  enforceInvitationCreateRateLimit,
+  recordInvitationAcceptAttempt,
+  recordInvitationCreateAttempt,
+} from "@/lib/rate-limit/service";
 
 export const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
 const TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -21,6 +27,7 @@ const generateToken = customAlphabet(TOKEN_ALPHABET, 32);
  */
 export async function createGroupInvitation(groupId: string, actingUserId: string) {
   await requireMembership(groupId, actingUserId);
+  await enforceInvitationCreateRateLimit(actingUserId);
 
   const [invitation] = await db
     .insert(groupInvitations)
@@ -31,6 +38,7 @@ export async function createGroupInvitation(groupId: string, actingUserId: strin
       expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
     })
     .returning();
+  await recordInvitationCreateAttempt(actingUserId);
   if (!invitation) throw new AppError(500, "No se pudo crear la invitacion");
   return invitation;
 }
@@ -84,64 +92,69 @@ export async function getInvitationPreview(token: string) {
  * paralelo.
  */
 export async function acceptGroupInvitation(token: string, alias: string, password: string) {
-  return db.transaction(async (tx) => {
-    const [invitation] = await tx
-      .select()
-      .from(groupInvitations)
-      .where(eq(groupInvitations.token, token))
-      .for("update")
-      .limit(1);
-    if (!invitation) throw new AppError(404, "Invitacion no encontrada", "invitation_not_found");
-    assertInvitationValid(invitation);
+  await enforceInvitationAcceptRateLimit();
+  try {
+    return await db.transaction(async (tx) => {
+      const [invitation] = await tx
+        .select()
+        .from(groupInvitations)
+        .where(eq(groupInvitations.token, token))
+        .for("update")
+        .limit(1);
+      if (!invitation) throw new AppError(404, "Invitacion no encontrada", "invitation_not_found");
+      assertInvitationValid(invitation);
 
-    const [group] = await tx.select().from(groups).where(eq(groups.id, invitation.groupId)).for("update").limit(1);
-    if (!group) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+      const [group] = await tx.select().from(groups).where(eq(groups.id, invitation.groupId)).for("update").limit(1);
+      if (!group) throw new AppError(404, "Grupo no encontrado", "group_not_found");
 
-    const memberCount = await tx
-      .select({ value: count() })
-      .from(memberships)
-      .where(eq(memberships.groupId, group.id));
-    if ((memberCount[0]?.value ?? 0) >= group.maxMembers) {
-      throw new AppError(409, `El grupo ha alcanzado el limite de ${group.maxMembers} miembros`, "group_full");
-    }
-
-    const { user } = await createUserWithAlias(alias, password, tx);
-
-    let membershipId: string | undefined;
-    try {
-      const [membership] = await tx
-        .insert(memberships)
-        .values({ groupId: group.id, userId: user.id, role: "member" })
-        .returning();
-      membershipId = membership?.id;
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new AppError(409, "Ya eres miembro de este grupo", "already_member");
+      const memberCount = await tx
+        .select({ value: count() })
+        .from(memberships)
+        .where(eq(memberships.groupId, group.id));
+      if ((memberCount[0]?.value ?? 0) >= group.maxMembers) {
+        throw new AppError(409, `El grupo ha alcanzado el limite de ${group.maxMembers} miembros`, "group_full");
       }
-      throw error;
-    }
 
-    await addUserToAllGroupSubgroups(tx, group.id, user.id);
+      const { user } = await createUserWithAlias(alias, password, tx);
 
-    if (membershipId) {
-      await recordAuditLog(tx, {
-        actorUserId: user.id,
-        action: "create",
-        entityType: "membership",
-        entityId: membershipId,
-        groupId: group.id,
-        afterData: { groupId: group.id, userId: user.id, role: "member", viaInvitation: true },
-      });
-    }
+      let membershipId: string | undefined;
+      try {
+        const [membership] = await tx
+          .insert(memberships)
+          .values({ groupId: group.id, userId: user.id, role: "member" })
+          .returning();
+        membershipId = membership?.id;
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new AppError(409, "Ya eres miembro de este grupo", "already_member");
+        }
+        throw error;
+      }
 
-    await tx
-      .update(groupInvitations)
-      .set({ usedAt: new Date(), usedByUserId: user.id })
-      .where(eq(groupInvitations.id, invitation.id));
+      await addUserToAllGroupSubgroups(tx, group.id, user.id);
 
-    const sessionToken = await createSessionToken({ userId: user.id, alias: user.alias });
-    await setSessionCookie(sessionToken);
+      if (membershipId) {
+        await recordAuditLog(tx, {
+          actorUserId: user.id,
+          action: "create",
+          entityType: "membership",
+          entityId: membershipId,
+          groupId: group.id,
+          afterData: { groupId: group.id, userId: user.id, role: "member", viaInvitation: true },
+        });
+      }
 
-    return { user, group };
-  });
+      await tx
+        .update(groupInvitations)
+        .set({ usedAt: new Date(), usedByUserId: user.id })
+        .where(eq(groupInvitations.id, invitation.id));
+
+      const sessionToken = await createSessionToken({ userId: user.id, alias: user.alias });
+      await setSessionCookie(sessionToken);
+
+      return { user, group };
+    });
+  } finally {
+    await recordInvitationAcceptAttempt();
+  }
 }

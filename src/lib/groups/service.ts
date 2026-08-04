@@ -7,6 +7,7 @@ import { addUserToAllGroupSubgroups, removeUserFromAllGroupSubgroups } from "./s
 import { pickAdminReplacement } from "./admin-replacement";
 import { recordAuditLog } from "@/lib/audit/service";
 import { requireActiveCurrency } from "@/lib/currencies/service";
+import { enforceGroupJoinRateLimit, recordGroupJoinAttempt } from "@/lib/rate-limit/service";
 import { GROUP_MAX_MEMBERS } from "@/lib/validation/groups";
 
 const INVITE_CODE_MAX_ATTEMPTS = 5;
@@ -134,57 +135,62 @@ export async function updateGroupName(groupId: string, userId: string, name: str
 }
 
 export async function joinGroupByInviteCode(userId: string, inviteCode: string) {
-  return db.transaction(async (tx) => {
-    const [group] = await tx
-      .select()
-      .from(groups)
-      .where(eq(groups.inviteCode, inviteCode))
-      .for("update")
-      .limit(1);
-    if (!group) throw new AppError(404, "Codigo de invitacion invalido", "invalid_invite_code");
+  await enforceGroupJoinRateLimit(userId);
+  try {
+    return await db.transaction(async (tx) => {
+      const [group] = await tx
+        .select()
+        .from(groups)
+        .where(eq(groups.inviteCode, inviteCode))
+        .for("update")
+        .limit(1);
+      if (!group) throw new AppError(404, "Codigo de invitacion invalido", "invalid_invite_code");
 
-    const existing = await tx
-      .select({ id: memberships.id })
-      .from(memberships)
-      .where(and(eq(memberships.groupId, group.id), eq(memberships.userId, userId)))
-      .limit(1);
-    if (existing.length > 0) {
-      throw new AppError(409, "Ya eres miembro de este grupo", "already_member");
-    }
+      const existing = await tx
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(and(eq(memberships.groupId, group.id), eq(memberships.userId, userId)))
+        .limit(1);
+      if (existing.length > 0) {
+        throw new AppError(409, "Ya eres miembro de este grupo", "already_member");
+      }
 
-    const [memberCountRow] = await tx
-      .select({ value: count() })
-      .from(memberships)
-      .where(eq(memberships.groupId, group.id));
-    const memberCount = memberCountRow?.value ?? 0;
-    if (memberCount >= group.maxMembers) {
-      throw new AppError(
-        409,
-        `El grupo ha alcanzado el limite de ${group.maxMembers} miembros`,
-        "group_full",
-      );
-    }
+      const [memberCountRow] = await tx
+        .select({ value: count() })
+        .from(memberships)
+        .where(eq(memberships.groupId, group.id));
+      const memberCount = memberCountRow?.value ?? 0;
+      if (memberCount >= group.maxMembers) {
+        throw new AppError(
+          409,
+          `El grupo ha alcanzado el limite de ${group.maxMembers} miembros`,
+          "group_full",
+        );
+      }
 
-    const [membership] = await tx
-      .insert(memberships)
-      .values({ groupId: group.id, userId, role: "member" })
-      .returning();
+      const [membership] = await tx
+        .insert(memberships)
+        .values({ groupId: group.id, userId, role: "member" })
+        .returning();
 
-    await addUserToAllGroupSubgroups(tx, group.id, userId);
+      await addUserToAllGroupSubgroups(tx, group.id, userId);
 
-    if (membership) {
-      await recordAuditLog(tx, {
-        actorUserId: userId,
-        action: "create",
-        entityType: "membership",
-        entityId: membership.id,
-        groupId: group.id,
-        afterData: membership,
-      });
-    }
+      if (membership) {
+        await recordAuditLog(tx, {
+          actorUserId: userId,
+          action: "create",
+          entityType: "membership",
+          entityId: membership.id,
+          groupId: group.id,
+          afterData: membership,
+        });
+      }
 
-    return { group, membership };
-  });
+      return { group, membership };
+    });
+  } finally {
+    await recordGroupJoinAttempt(userId);
+  }
 }
 
 export async function listMembers(groupId: string, userId: string) {

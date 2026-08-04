@@ -13,6 +13,7 @@ async function main() {
   console.log(`  - Intentos de login/recuperacion borrados: ${report.authAttemptsDeleted}`);
   console.log(`  - Notificaciones leidas borradas: ${report.readNotificationsDeleted}`);
   console.log(`  - Tipos de cambio historicos superados borrados: ${report.exchangeRatesDeleted}`);
+  console.log(`  - Intentos de rate limiting (registro/invitaciones/union) borrados: ${report.rateLimitAttemptsDeleted}`);
 
   process.exit(0);
 }
