@@ -62,7 +62,15 @@ interface ImportJobError {
   recoverable: boolean;
 }
 
+interface ReconciliationReport {
+  matches: boolean;
+  checkedUserCount: number;
+  discrepancies: { currencyCode: string; gatsoUserId: string; splitwiseCents: number; gatsoCents: number; diffCents: number }[];
+  truncated: boolean;
+}
+
 const RUNNING_STATUSES = new Set(["draft", "preview", "running"]);
+const TERMINAL_NON_CANCELLED_STATUSES = new Set(["completed", "partial", "failed"]);
 
 const STATUS_LABEL: Record<ImportJob["status"], string> = {
   draft: "Iniciando",
@@ -124,6 +132,10 @@ export default function SplitwiseImportClient() {
   const [jobErrors, setJobErrors] = useState<ImportJobError[]>([]);
   const [polling, setPolling] = useState(false);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [reconciliation, setReconciliation] = useState<ReconciliationReport | null>(null);
+  const [checkingReconciliation, setCheckingReconciliation] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
 
   const loadConnection = useCallback(async () => {
     const response = await apiFetch("/api/imports/splitwise/connection");
@@ -333,6 +345,52 @@ export default function SplitwiseImportClient() {
     stopPolling();
     const data = await response.json();
     setJob(data.job);
+  }
+
+  async function handleCheckReconciliation() {
+    if (!job) return;
+    setCheckingReconciliation(true);
+    try {
+      const response = await apiFetch(`/api/imports/splitwise/jobs/${job.id}/reconciliation`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo comprobar la reconciliacion");
+        return;
+      }
+      const data = await response.json();
+      setReconciliation(data.report);
+      if (data.report.matches) {
+        toast.success("Los balances coinciden exactamente");
+      } else {
+        toast.warning("Se encontraron diferencias, revisa el detalle");
+      }
+    } finally {
+      setCheckingReconciliation(false);
+    }
+  }
+
+  async function handleRollback() {
+    if (!job) return;
+    if (!window.confirm("¿Revertir esta importacion? Se borraran los gastos y pagos creados por ella que no se hayan editado despues.")) {
+      return;
+    }
+    setRollingBack(true);
+    try {
+      const response = await apiFetch(`/api/imports/splitwise/jobs/${job.id}/rollback`, { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo revertir la importacion");
+        return;
+      }
+      const data = await response.json();
+      toast.success(
+        `Revertido: ${data.report.deletedExpenses} gastos y ${data.report.deletedPayments} pagos borrados` +
+          (data.report.protectedCount > 0 ? ` (${data.report.protectedCount} protegidos por estar editados)` : ""),
+      );
+      setReconciliation(null);
+    } finally {
+      setRollingBack(false);
+    }
   }
 
   return (
@@ -573,15 +631,40 @@ export default function SplitwiseImportClient() {
                 Ver grupo en Gatso
               </Link>
             ) : null}
+            {reconciliation ? (
+              <div className="mt-2 flex flex-col gap-1 rounded-md border border-border p-3">
+                <p className="font-medium text-foreground">
+                  {reconciliation.matches
+                    ? "Los balances de Splitwise y Gatso coinciden exactamente."
+                    : `Se encontraron ${reconciliation.discrepancies.length} discrepancias:`}
+                </p>
+                {reconciliation.discrepancies.map((d, index) => (
+                  <p key={index} className="text-xs text-muted-foreground">
+                    {d.currencyCode} · usuario {d.gatsoUserId}: Splitwise {(d.splitwiseCents / 100).toFixed(2)}, Gatso{" "}
+                    {(d.gatsoCents / 100).toFixed(2)} (diferencia {(d.diffCents / 100).toFixed(2)})
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </CardContent>
-          {RUNNING_STATUSES.has(job.status) ? (
-            <CardFooter>
+          <CardFooter className="flex flex-wrap gap-2">
+            {RUNNING_STATUSES.has(job.status) ? (
               <Button variant="outline" size="sm" onClick={handleCancelJob}>
                 <XCircle className="h-4 w-4" />
                 Cancelar importacion
               </Button>
-            </CardFooter>
-          ) : null}
+            ) : null}
+            {TERMINAL_NON_CANCELLED_STATUSES.has(job.status) ? (
+              <>
+                <Button variant="outline" size="sm" onClick={handleCheckReconciliation} disabled={checkingReconciliation}>
+                  {checkingReconciliation ? "Comprobando..." : "Comprobar balances"}
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleRollback} disabled={rollingBack}>
+                  {rollingBack ? "Revirtiendo..." : "Revertir importacion"}
+                </Button>
+              </>
+            ) : null}
+          </CardFooter>
         </Card>
       ) : null}
     </div>
