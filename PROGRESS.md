@@ -2014,17 +2014,29 @@ tooling) para recuperar ESLint en local y CI.
 ### Funcionalidad de producto pendiente
 
 - Implementar notificaciones push con Push/Notification API, suscripciones
-  por dispositivo y contenido que no revele informacion sensible.
-- Anadir a la UI el abandono independiente de un subgrupo, conservando
-  gastos y deudas historicas.
+  por dispositivo y contenido que no revele informacion sensible. Verificado
+  en esta revision: `public/sw.js` solo tiene `install`/`activate`/`fetch`,
+  sin `push` ni `pushsubscriptionchange`, y no hay `web-push`/VAPID en el
+  proyecto.
 - Definir la politica para grupos con cero miembros: archivado, invalidacion
-  del codigo, eliminacion diferida o recuperacion administrativa.
+  del codigo, eliminacion diferida o recuperacion administrativa. Verificado
+  en esta revision: `leaveGroup` (`src/lib/groups/service.ts:280-308`) sigue
+  borrando el grupo de forma inmediata cuando el ultimo miembro lo abandona,
+  sin archivado ni periodo de gracia.
 - Crear una UI segura y auditada para conceder/revocar administradores de
-  plataforma, impidiendo retirar al ultimo administrador.
+  plataforma, impidiendo retirar al ultimo administrador. Verificado en esta
+  revision: `src/lib/auth/platform-admin.ts` solo expone lectura
+  (`isPlatformAdmin`/`requirePlatformAdmin`), no hay
+  `setPlatformAdmin`/`grantPlatformAdmin` ni pagina bajo `admin/` aparte de
+  `admin/currencies`.
 - Crear una pantalla para la auditoria global de plataforma; la API ya
-  soporta filtros y paginacion, pero no tiene frontend propio.
-- Revisar la politica de contrasenas (comunes/comprometidas, longitud maxima
-  y orientacion) sin reglas de composicion arbitrarias.
+  soporta filtros y paginacion (`GET /api/admin/audit-log`), pero sigue sin
+  frontend propio (solo existe la version por grupo,
+  `group-audit-log-card.tsx`).
+- Anadir verificacion de contrasenas comunes/comprometidas (lista negra o
+  servicio tipo HaveIBeenPwned). El resto de la politica ya esta al dia:
+  `passwordSchema` (`src/lib/validation/auth.ts:23-26`) exige minimo 10 y
+  maximo 128 caracteres y ya no impone reglas de composicion arbitrarias.
 
 ### Verificacion manual y produccion
 
@@ -2039,3 +2051,24 @@ tooling) para recuperar ESLint en local y CI.
 - Verificar en Vercel que `CHUNK_TIME_BUDGET_MS = 8000` deja margen real
   suficiente y que la barra de progreso avanza correctamente con grupos
   grandes y varios chunks.
+
+## Rebranding — Nuevo logotipo
+
+- Sustituido el SVG fuente del icono (`src/app/icon.svg` y su copia
+  `public/icons/icon.svg`, deben mantenerse identicos) por un nuevo diseno
+  de dos trazos enlazados con un signo igual, recoloreado con los tokens de
+  `src/app/globals.css` en vez de la paleta original de la propuesta: fondo
+  en dos tonos oscuros de marca (`#2f2147` a `#171521`), trazos en los pares
+  pastel aqua/info (`#d9edf0`→`#cbe4f4`) y lavanda secundaria/primaria
+  (`#e8def8`→`#c9c2f0`), y signo igual en blanco/crema de tarjeta.
+- `scripts/generate-pwa-icons.mjs`: el color `background` usado para
+  rellenar el margen transparente de las esquinas redondeadas pasa de
+  `#c9c2f0` a `#171521` (el nuevo tono de fondo del icono); regenerados
+  `public/icons/icon-192.png`, `icon-512.png`,
+  `icon-maskable-{192,512}.png` y `src/app/apple-icon.png` con
+  `pnpm icons:generate`.
+- `src/app/manifest.ts`: `background_color`/`theme_color` actualizados a
+  `#171521`/`#211a44` para reflejar el nuevo fondo oscuro del icono en la
+  pantalla de carga y la UI del sistema al instalar la PWA.
+- Verificado con `tsc --noEmit` y `vitest run` (104/104); sin cambios de
+  codigo fuera de branding.
