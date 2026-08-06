@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
 import { fetchAllExpenses } from "@/lib/expenses/fetch-all";
@@ -13,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -32,6 +34,11 @@ interface SubgroupDetail {
   subgroup: { id: string; name: string; groupId: string };
   members: { userId: string; displayName: string }[];
   groupBaseCurrencyCode?: string;
+}
+
+interface SubgroupOption {
+  id: string;
+  name: string;
 }
 
 interface ExpenseRow {
@@ -76,6 +83,7 @@ const SUBGROUP_EXPENSES_CACHE_KEY = (subgroupId: string) => `subgroup-expenses:$
 const SUBGROUP_STATS_CACHE_KEY = (subgroupId: string) => `subgroup-stats:${subgroupId}`;
 const SUBGROUP_SETTLEMENTS_CACHE_KEY = (subgroupId: string) => `subgroup-settlements:${subgroupId}`;
 const SUBGROUP_ADMIN_CACHE_KEY = (groupId: string) => `group-is-admin:${groupId}`;
+const GROUP_SUBGROUPS_CACHE_KEY = (groupId: string) => `group-subgroups:${groupId}`;
 
 export default function SubgroupDetailClient({
   groupId,
@@ -86,7 +94,9 @@ export default function SubgroupDetailClient({
   subgroupId: string;
   currentUserId: string;
 }) {
+  const router = useRouter();
   const [detail, setDetail] = useState<SubgroupDetail | null>(null);
+  const [availableSubgroups, setAvailableSubgroups] = useState<SubgroupOption[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
   const [stats, setStats] = useState<CurrencyExpenseStats[] | null>(null);
   const [statsBaseCurrency, setStatsBaseCurrency] = useState<{ code: string; totalConvertedCents: number | null } | null>(
@@ -101,11 +111,12 @@ export default function SubgroupDetailClient({
 
   const load = useCallback(async () => {
     try {
-      const [detailRes, statsRes, membersRes, settlementRes] = await Promise.all([
+      const [detailRes, statsRes, membersRes, settlementRes, subgroupsRes] = await Promise.all([
         apiFetch(`/api/groups/${groupId}/subgroups/${subgroupId}`),
         apiFetch(`/api/groups/${groupId}/expenses/stats?subgroupId=${subgroupId}`),
         apiFetch(`/api/groups/${groupId}/members`),
         apiFetch(`/api/groups/${groupId}/settlement?subgroupId=${subgroupId}`),
+        apiFetch(`/api/groups/${groupId}/subgroups`),
       ]);
       if (!detailRes.ok) {
         if (detailRes.status === 404) setNotFound(true);
@@ -139,10 +150,15 @@ export default function SubgroupDetailClient({
         setIsAdmin(admin);
         await setCache(SUBGROUP_ADMIN_CACHE_KEY(groupId), admin);
       }
+      if (subgroupsRes.ok) {
+        const data = (await subgroupsRes.json()).subgroups as SubgroupOption[];
+        setAvailableSubgroups(data);
+        await setCache(GROUP_SUBGROUPS_CACHE_KEY(groupId), data);
+      }
       setOffline(false);
     } catch {
       setOffline(true);
-      const [cachedDetail, cachedExpenses, cachedStats, cachedSettlements, cachedAdmin] = await Promise.all([
+      const [cachedDetail, cachedExpenses, cachedStats, cachedSettlements, cachedAdmin, cachedSubgroups] = await Promise.all([
         getCache<SubgroupDetail>(SUBGROUP_DETAIL_CACHE_KEY(subgroupId)),
         getCache<ExpenseRow[]>(SUBGROUP_EXPENSES_CACHE_KEY(subgroupId)),
         getCache<{ stats: CurrencyExpenseStats[]; baseCurrencyCode: string; totalConvertedCents: number | null }>(
@@ -152,6 +168,7 @@ export default function SubgroupDetailClient({
           SUBGROUP_SETTLEMENTS_CACHE_KEY(subgroupId),
         ),
         getCache<boolean>(SUBGROUP_ADMIN_CACHE_KEY(groupId)),
+        getCache<SubgroupOption[]>(GROUP_SUBGROUPS_CACHE_KEY(groupId)),
       ]);
       if (cachedDetail) setDetail(cachedDetail);
       if (cachedExpenses) setExpenses(cachedExpenses);
@@ -164,6 +181,7 @@ export default function SubgroupDetailClient({
         setConvertedOverall(cachedSettlements.convertedOverall ?? null);
       }
       if (cachedAdmin !== null) setIsAdmin(cachedAdmin);
+      if (cachedSubgroups) setAvailableSubgroups(cachedSubgroups);
     }
     const pending = await listPendingExpenses(groupId);
     setPendingExpenses(pending.filter((item) => item.payload.subgroupId === subgroupId));
@@ -312,9 +330,26 @@ export default function SubgroupDetailClient({
         </Link>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{detail.subgroup.name}</h1>
-        <Badge variant="secondary">Subgrupo</Badge>
+        <div className="flex items-center gap-2">
+          {availableSubgroups.length > 1 ? (
+            <Select
+              value={subgroupId}
+              onValueChange={(nextSubgroupId) => router.push(`/groups/${groupId}/subgroups/${nextSubgroupId}`)}
+            >
+              <SelectTrigger className="w-56" aria-label="Cambiar de subgrupo">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableSubgroups.map((subgroup) => (
+                  <SelectItem key={subgroup.id} value={subgroup.id}>{subgroup.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Badge variant="secondary">Subgrupo</Badge>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
