@@ -11,16 +11,19 @@
  * subconjuntos. Por eso se combinan dos estrategias, elegidas segun el
  * numero de balances distintos de cero:
  *
- * - Hasta `EXACT_THRESHOLD` balances: backtracking exacto con poda
- *   (`minimizeExact`), que garantiza el numero minimo de transacciones
- *   posible. La complejidad es factorial en el peor caso, pero en la
+ * - Hasta `EXACT_THRESHOLD` balances: backtracking exacto bipartito con
+ *   poda (`minimizeExact`), que garantiza el numero minimo de
+ *   transacciones y evita intermediarios: solo pagan quienes tienen saldo
+ *   deudor. La complejidad es factorial en el peor caso, pero en la
  *   practica los subgrupos de gastos compartidos casi siempre tienen pocos
  *   participantes con saldo pendiente (la mayoria de gastos se acaban
  *   compensando entre si).
  * - Por encima de ese umbral (grupos grandes, hasta 64 miembros): heuristica
  *   voraz (`minimizeGreedy`, empareja siempre al mayor acreedor con el mayor
  *   deudor), que no garantiza el minimo absoluto pero si un resultado
- *   razonable en tiempo O(n^2 log n) y como mucho `n - 1` transacciones.
+ *   razonable en tiempo O(n^2 log n) y como mucho `n - 1` transacciones. Al
+ *   operar siempre de deudor a acreedor, si garantiza el minimo numero de
+ *   personas emisoras incluso cuando el numero de movimientos es heuristico.
  */
 import { AppError } from "@/lib/errors";
 
@@ -39,50 +42,74 @@ export interface Transaction {
 export const EXACT_THRESHOLD = 8;
 
 /**
- * Backtracking exacto (variante del problema "Optimal Account Balancing"):
- * en cada paso se fija el primer balance no liquidado (`start`) y se prueba
- * a saldarlo por completo contra cada otro balance de signo opuesto,
- * generando una transaccion y recursando sobre el resto. Poda cualquier
- * rama que ya iguale o supere el mejor numero de transacciones encontrado.
+ * Backtracking exacto sobre deudores y acreedores. En cada paso se toma el
+ * primer deudor pendiente y se prueba contra cada acreedor, transfiriendo
+ * el minimo de ambos saldos. Asi cada movimiento liquida al menos a una de
+ * las dos personas y nunca convierte a un acreedor en intermediario que
+ * tenga que enviar dinero despues.
+ *
+ * El criterio es lexicografico: primero menos transferencias y, en empate,
+ * menos emisores distintos. Como todas las transferencias van directamente
+ * de un deudor a un acreedor, se alcanza tambien el minimo teorico de
+ * emisores: toda persona con balance negativo y ninguna otra.
  */
 export function minimizeExact(balances: Balance[]): Transaction[] {
-  const amounts = balances.map((b) => b.netCents);
-  const ids = balances.map((b) => b.userId);
-  let best: { count: number; transactions: Transaction[] } = { count: Infinity, transactions: [] };
+  const debtors = balances
+    .filter((balance) => balance.netCents < 0)
+    .map((balance) => ({ userId: balance.userId, remainingCents: -balance.netCents }));
+  const creditors = balances
+    .filter((balance) => balance.netCents > 0)
+    .map((balance) => ({ userId: balance.userId, remainingCents: balance.netCents }));
+  const greedyBaseline = minimizeGreedy(balances);
+  let best: { transactionCount: number; senderCount: number; transactions: Transaction[] } = {
+    transactionCount: greedyBaseline.length,
+    senderCount: new Set(greedyBaseline.map((transaction) => transaction.fromUserId)).size,
+    transactions: greedyBaseline,
+  };
+  const shortestPathToState = new Map<string, number>();
 
-  function backtrack(fromIndex: number, current: number[], transactions: Transaction[]): void {
-    let start = fromIndex;
-    while (start < current.length && current[start] === 0) start++;
-
-    if (start === current.length) {
-      if (transactions.length < best.count) {
-        best = { count: transactions.length, transactions: [...transactions] };
+  function backtrack(transactions: Transaction[]): void {
+    if (debtors.every((debtor) => debtor.remainingCents === 0)) {
+      const senderCount = new Set(transactions.map((transaction) => transaction.fromUserId)).size;
+      if (
+        transactions.length < best.transactionCount ||
+        (transactions.length === best.transactionCount && senderCount < best.senderCount)
+      ) {
+        best = { transactionCount: transactions.length, senderCount, transactions: [...transactions] };
       }
       return;
     }
-    if (transactions.length >= best.count) return;
+    if (transactions.length >= best.transactionCount) return;
 
-    const startAmount = current[start] ?? 0;
-    for (let j = start + 1; j < current.length; j++) {
-      const otherAmount = current[j] ?? 0;
-      if (otherAmount === 0) continue;
-      if ((startAmount > 0) === (otherAmount > 0)) continue;
+    const stateKey = `${debtors.map((debtor) => debtor.remainingCents).join(",")}|${creditors.map((creditor) => creditor.remainingCents).join(",")}`;
+    const previousLength = shortestPathToState.get(stateKey);
+    if (previousLength !== undefined && previousLength <= transactions.length) return;
+    shortestPathToState.set(stateKey, transactions.length);
 
-      current[j] = otherAmount + startAmount;
-      transactions.push(
-        startAmount > 0
-          ? { fromUserId: ids[j]!, toUserId: ids[start]!, amountCents: Math.abs(startAmount) }
-          : { fromUserId: ids[start]!, toUserId: ids[j]!, amountCents: Math.abs(startAmount) },
-      );
+    const equivalentPairs = new Set<string>();
+    for (const debtor of debtors) {
+      if (debtor.remainingCents === 0) continue;
+      for (const creditor of creditors) {
+        if (creditor.remainingCents === 0) continue;
+        const pairKey = `${debtor.remainingCents}:${creditor.remainingCents}`;
+        if (equivalentPairs.has(pairKey)) continue;
+        equivalentPairs.add(pairKey);
 
-      backtrack(start + 1, current, transactions);
+        const amountCents = Math.min(debtor.remainingCents, creditor.remainingCents);
+        debtor.remainingCents -= amountCents;
+        creditor.remainingCents -= amountCents;
+        transactions.push({ fromUserId: debtor.userId, toUserId: creditor.userId, amountCents });
 
-      transactions.pop();
-      current[j] = otherAmount;
+        backtrack(transactions);
+
+        transactions.pop();
+        debtor.remainingCents += amountCents;
+        creditor.remainingCents += amountCents;
+      }
     }
   }
 
-  backtrack(0, [...amounts], []);
+  backtrack([]);
   return best.transactions;
 }
 

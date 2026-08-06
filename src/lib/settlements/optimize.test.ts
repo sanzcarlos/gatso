@@ -71,6 +71,38 @@ describe("minimizeTransactions", () => {
     assertSettles(balances, transactions);
   });
 
+  it("un unico deudor paga directamente a varios acreedores sin crear intermediarios", () => {
+    const balances: Balance[] = [
+      { userId: "debtor", netCents: -500 },
+      { userId: "creditor-1", netCents: 200 },
+      { userId: "creditor-2", netCents: 300 },
+    ];
+
+    const transactions = minimizeTransactions(balances);
+
+    expect(transactions).toHaveLength(2);
+    expect(new Set(transactions.map((transaction) => transaction.fromUserId))).toEqual(new Set(["debtor"]));
+    assertSettles(balances, transactions);
+  });
+
+  it("entre soluciones minimas solo hacen transferencias las personas deudoras", () => {
+    const balances: Balance[] = [
+      { userId: "debtor-1", netCents: -600 },
+      { userId: "debtor-2", netCents: -400 },
+      { userId: "creditor-1", netCents: 500 },
+      { userId: "creditor-2", netCents: 300 },
+      { userId: "creditor-3", netCents: 200 },
+    ];
+
+    const transactions = minimizeTransactions(balances);
+
+    expect(transactions).toHaveLength(4);
+    expect(new Set(transactions.map((transaction) => transaction.fromUserId))).toEqual(
+      new Set(["debtor-1", "debtor-2"]),
+    );
+    assertSettles(balances, transactions);
+  });
+
   it("rechaza balances que no suman cero (error de calculo previo)", () => {
     expect(() => minimizeTransactions([{ userId: A, netCents: 100 }])).toThrow(AppError);
   });
