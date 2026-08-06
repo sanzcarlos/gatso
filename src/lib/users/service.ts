@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { alias as aliasTable } from "drizzle-orm/pg-core";
 import { db, users, memberships } from "@/db";
 import type { Tx } from "@/db";
@@ -6,6 +6,8 @@ import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { hashSecret } from "@/lib/auth/password";
 import { generateRecoveryCode, normalizeRecoveryCode } from "@/lib/auth/recovery-code";
+import { requirePlatformAdmin } from "@/lib/auth/platform-admin";
+import { recordAuditLog } from "@/lib/audit/service";
 import { nanoid } from "nanoid";
 
 /**
@@ -188,4 +190,76 @@ export async function getSessionDisplayInfo(userId: string) {
     .where(eq(users.id, userId))
     .limit(1);
   return { displayName: user?.displayName ?? null, isPlatformAdmin: user?.isPlatformAdmin ?? false };
+}
+
+/**
+ * Catalogo completo de usuarios, solo para administradores de plataforma
+ * (mismo criterio que `listAllCurrencies`): a diferencia de
+ * `listKnownUsers`, que solo devuelve personas con las que se comparte
+ * grupo, esta lista es global e incluye cuentas provisionales.
+ */
+export async function listAllUsers(actingUserId: string) {
+  await requirePlatformAdmin(actingUserId);
+  return db
+    .select({
+      id: users.id,
+      username: users.username,
+      displayName: users.displayName,
+      isProvisional: users.isProvisional,
+      isPlatformAdmin: users.isPlatformAdmin,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .orderBy(users.username);
+}
+
+/**
+ * Concede o revoca el rol de administrador de plataforma a un usuario.
+ * Antes de esta funcion el rol solo podia activarse con un UPDATE manual
+ * en base de datos; ahora cualquier administrador de plataforma puede
+ * gestionarlo desde `/admin/users`, pero se mantienen dos salvaguardas:
+ * no se puede revocar el propio rol (evita bloqueos accidentales sin
+ * salida) ni el del ultimo administrador restante (evita dejar la
+ * plataforma sin nadie que pueda volver a conceder el rol).
+ */
+export async function setPlatformAdmin(actingUserId: string, targetUserId: string, isPlatformAdmin: boolean) {
+  await requirePlatformAdmin(actingUserId);
+
+  if (!isPlatformAdmin && targetUserId === actingUserId) {
+    throw new AppError(409, "No puedes revocar tu propio rol de administrador de plataforma", "cannot_revoke_self");
+  }
+
+  return db.transaction(async (tx) => {
+    const [previousUser] = await tx
+      .select({ id: users.id, isPlatformAdmin: users.isPlatformAdmin })
+      .from(users)
+      .where(eq(users.id, targetUserId))
+      .limit(1);
+    if (!previousUser) throw new AppError(404, "Usuario no encontrado", "user_not_found");
+
+    if (!isPlatformAdmin && previousUser.isPlatformAdmin) {
+      const [adminCountRow] = await tx.select({ value: count() }).from(users).where(eq(users.isPlatformAdmin, true));
+      if ((adminCountRow?.value ?? 0) <= 1) {
+        throw new AppError(409, "No puedes revocar al ultimo administrador de plataforma", "cannot_revoke_last_admin");
+      }
+    }
+
+    const [updated] = await tx
+      .update(users)
+      .set({ isPlatformAdmin })
+      .where(eq(users.id, targetUserId))
+      .returning({ id: users.id, username: users.username, displayName: users.displayName, isPlatformAdmin: users.isPlatformAdmin });
+    if (!updated) throw new AppError(404, "Usuario no encontrado", "user_not_found");
+
+    await recordAuditLog(tx, {
+      actorUserId: actingUserId,
+      action: "update",
+      entityType: "user",
+      entityId: updated.id,
+      beforeData: { isPlatformAdmin: previousUser.isPlatformAdmin },
+      afterData: { isPlatformAdmin: updated.isPlatformAdmin },
+    });
+
+    return updated;
+  });
 }

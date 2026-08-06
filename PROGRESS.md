@@ -2023,12 +2023,6 @@ tooling) para recuperar ESLint en local y CI.
   en esta revision: `leaveGroup` (`src/lib/groups/service.ts:280-308`) sigue
   borrando el grupo de forma inmediata cuando el ultimo miembro lo abandona,
   sin archivado ni periodo de gracia.
-- Crear una UI segura y auditada para conceder/revocar administradores de
-  plataforma, impidiendo retirar al ultimo administrador. Verificado en esta
-  revision: `src/lib/auth/platform-admin.ts` solo expone lectura
-  (`isPlatformAdmin`/`requirePlatformAdmin`), no hay
-  `setPlatformAdmin`/`grantPlatformAdmin` ni pagina bajo `admin/` aparte de
-  `admin/currencies`.
 - Crear una pantalla para la auditoria global de plataforma; la API ya
   soporta filtros y paginacion (`GET /api/admin/audit-log`), pero sigue sin
   frontend propio (solo existe la version por grupo,
@@ -2072,3 +2066,37 @@ tooling) para recuperar ESLint en local y CI.
   pantalla de carga y la UI del sistema al instalar la PWA.
 - Verificado con `tsc --noEmit` y `vitest run` (104/104); sin cambios de
   codigo fuera de branding.
+
+## UI de administradores de plataforma
+
+- **Nueva pagina `/admin`** (`src/app/(app)/admin/page.tsx`): landing con
+  tarjetas hacia las secciones de administracion (antes el enlace del
+  header llevaba directo a `/admin/currencies`, unica pantalla existente).
+  `SiteHeader` ahora enlaza a `/admin` en vez de `/admin/currencies`
+  (`src/components/site-header.tsx`).
+- **`setPlatformAdmin`/`listAllUsers`** (`src/lib/users/service.ts`): mismo
+  patron que `setCurrencyActive`/`listAllCurrencies` (Fase 6). Dos
+  salvaguardas nuevas para evitar dejar la plataforma sin administradores:
+  no se puede revocar el propio rol (`cannot_revoke_self`) ni el del
+  ultimo administrador restante, comprobado con `count()` dentro de la
+  misma transaccion (`cannot_revoke_last_admin`). Antes el rol solo podia
+  activarse con un UPDATE manual en base de datos; eso sigue siendo el
+  unico camino para el primer administrador, pero a partir de ahi ya hay
+  UI para gestionar al resto.
+- **`src/lib/audit/service.ts`**: nuevo valor `"user"` en `AuditEntityType`
+  (sigue siendo un `varchar(32)`, no un enum de Postgres, por lo que no
+  hizo falta migracion). Cada concesion/revocacion queda registrada como
+  `action: "update"`, `entityType: "user"`, con `beforeData`/`afterData`
+  `{ isPlatformAdmin }`, visible ya hoy via `GET /api/admin/audit-log`
+  aunque esa pantalla de auditoria global todavia no tiene frontend.
+- **Rutas**: `GET /api/admin/users` (`listAllUsers`), `PATCH
+  /api/admin/users/[userId]` (`setPlatformAdmin`), ambas con
+  `requireSession` + `requirePlatformAdmin` dentro del servicio (mismo
+  doble chequeo que `/api/admin/currencies`).
+- **UI** (`src/app/(app)/admin/users/`): tabla con `Switch` por usuario
+  (mismo patron que el catalogo de monedas); el interruptor se deshabilita
+  visualmente cuando accionarlo revocaria el rol propio o el del ultimo
+  administrador, evitando una llamada que el backend rechazaria igualmente.
+- Verificado con `tsc --noEmit`, `next build` (rutas `/admin`, `/admin/users`,
+  `/api/admin/users*` compiladas sin error de tipado de rutas) y `vitest run`
+  (104/104).

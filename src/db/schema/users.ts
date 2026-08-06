@@ -35,9 +35,14 @@ export const users = pgTable("users", {
   /**
    * Administrador de plataforma (Fase 6): distinto del rol "admin" de
    * `memberships` (que es por grupo). Gestiona catalogos globales como
-   * monedas. No hay UI para auto-asignarse este rol por seguridad; el
-   * primer administrador se activa con un UPDATE manual en base de datos
-   * (mismo patron que ajustar limites via `app_config`).
+   * monedas, otros administradores de plataforma y la auditoria global
+   * desde `/admin` (`setPlatformAdmin` en `src/lib/users/service.ts`). El
+   * primer administrador sigue activandose con un UPDATE manual en base
+   * de datos (mismo patron que ajustar limites via `app_config`); a
+   * partir de ahi, un administrador puede conceder o revocar el rol a
+   * cualquier otra cuenta, pero nunca a si mismo ni al ultimo
+   * administrador restante, para que la plataforma nunca se quede sin
+   * nadie con este rol.
    */
   isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

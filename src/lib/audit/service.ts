@@ -21,7 +21,8 @@ export type AuditEntityType =
   | "settlement_payment"
   | "external_connection"
   | "import_job"
-  | "group_invitation";
+  | "group_invitation"
+  | "user";
 
 export type AuditAction = "create" | "update" | "delete";
 

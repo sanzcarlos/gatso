@@ -62,7 +62,7 @@ export function SiteHeader({ session }: SiteHeaderProps) {
           ) : null}
           {session?.isPlatformAdmin ? (
             <Link
-              href="/admin/currencies"
+              href="/admin"
               className="flex items-center gap-1.5 rounded-lg px-3 py-2 font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <ShieldCheck className="h-4 w-4" />
@@ -114,7 +114,7 @@ export function SiteHeader({ session }: SiteHeaderProps) {
                   <DropdownMenuItem asChild><Link href="/settings/import/splitwise" className="gap-2"><UploadCloud /> Importar desde Splitwise</Link></DropdownMenuItem>
                   <DropdownMenuItem asChild><Link href={`/users/${session.userId}`} className="gap-2"><UserRound /> Mi perfil</Link></DropdownMenuItem>
                   {session.isPlatformAdmin ? (
-                    <DropdownMenuItem asChild><Link href="/admin/currencies" className="gap-2"><ShieldCheck /> Administracion</Link></DropdownMenuItem>
+                    <DropdownMenuItem asChild><Link href="/admin" className="gap-2"><ShieldCheck /> Administracion</Link></DropdownMenuItem>
                   ) : null}
                 </>
               ) : (
