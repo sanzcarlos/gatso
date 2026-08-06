@@ -29,6 +29,7 @@ import { ExpenseHistoryDialog } from "../../expense-history-dialog";
 import { ExpenseStatsCharts, type CurrencyExpenseStats } from "@/components/expense-stats-charts";
 import { SettlementCard, type CurrencySettlement } from "@/components/settlement-card";
 import { GroupSummaryCard, type SummaryExpense } from "@/components/group-summary-card";
+import { getAvailableSubgroupMembers } from "@/lib/groups/subgroup-members";
 
 interface SubgroupDetail {
   subgroup: { id: string; name: string; groupId: string };
@@ -39,6 +40,12 @@ interface SubgroupDetail {
 interface SubgroupOption {
   id: string;
   name: string;
+}
+
+interface GroupMember {
+  userId: string;
+  displayName: string;
+  role: "admin" | "member";
 }
 
 interface ExpenseRow {
@@ -97,6 +104,9 @@ export default function SubgroupDetailClient({
   const router = useRouter();
   const [detail, setDetail] = useState<SubgroupDetail | null>(null);
   const [availableSubgroups, setAvailableSubgroups] = useState<SubgroupOption[]>([]);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [updatingMember, setUpdatingMember] = useState(false);
   const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
   const [stats, setStats] = useState<CurrencyExpenseStats[] | null>(null);
   const [statsBaseCurrency, setStatsBaseCurrency] = useState<{ code: string; totalConvertedCents: number | null } | null>(
@@ -145,7 +155,9 @@ export default function SubgroupDetailClient({
       }
       if (membersRes.ok) {
         const data = await membersRes.json();
-        const role = data.members?.find((m: { userId: string; role: string }) => m.userId === currentUserId)?.role;
+        const loadedMembers = (data.members ?? []) as GroupMember[];
+        setGroupMembers(loadedMembers);
+        const role = loadedMembers.find((member) => member.userId === currentUserId)?.role;
         const admin = role === "admin";
         setIsAdmin(admin);
         await setCache(SUBGROUP_ADMIN_CACHE_KEY(groupId), admin);
@@ -257,6 +269,50 @@ export default function SubgroupDetailClient({
     }
   }
 
+  async function handleAddMember() {
+    if (!selectedMemberId) return;
+    setUpdatingMember(true);
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/subgroups/${subgroupId}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selectedMemberId }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo agregar el usuario al subgrupo");
+        return;
+      }
+      setSelectedMemberId("");
+      toast.success("Usuario agregado al subgrupo");
+      await load();
+    } catch {
+      toast.error("Sin conexion: no se puede agregar el usuario ahora");
+    } finally {
+      setUpdatingMember(false);
+    }
+  }
+
+  async function handleRemoveMember(targetUserId: string) {
+    setUpdatingMember(true);
+    try {
+      const response = await apiFetch(`/api/groups/${groupId}/subgroups/${subgroupId}/members/${targetUserId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error ?? "No se pudo quitar el usuario del subgrupo");
+        return;
+      }
+      toast.success("Usuario eliminado del subgrupo");
+      await load();
+    } catch {
+      toast.error("Sin conexion: no se puede quitar el usuario ahora");
+    } finally {
+      setUpdatingMember(false);
+    }
+  }
+
   function renderSummaryExpenseActions(expense: SummaryExpense) {
     if (expense.pending) {
       return <Button variant="ghost" size="sm" onClick={() => handleDiscardPending(expense.id)}>Descartar</Button>;
@@ -315,6 +371,7 @@ export default function SubgroupDetailClient({
   }
 
   const members = detail.members;
+  const availableMembers = getAvailableSubgroupMembers(groupMembers, members);
 
   return (
     <div className="flex flex-col gap-6">
@@ -404,6 +461,36 @@ export default function SubgroupDetailClient({
             lockedSubgroupId={subgroupId}
             groupBaseCurrencyCode={detail.groupBaseCurrencyCode}
           />
+        }
+        participantAction={availableMembers.length > 0 ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
+              <SelectTrigger className="w-48" aria-label="Usuario del grupo para agregar">
+                <SelectValue placeholder="Agregar usuario" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableMembers.map((member) => (
+                  <SelectItem key={member.userId} value={member.userId}>{member.displayName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="button" size="sm" disabled={!selectedMemberId || updatingMember} onClick={handleAddMember}>
+              Agregar
+            </Button>
+          </div>
+        ) : undefined}
+        renderParticipantActions={(participant) =>
+          isAdmin || participant.userId === currentUserId ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={updatingMember}
+              onClick={() => handleRemoveMember(participant.userId)}
+            >
+              Quitar
+            </Button>
+          ) : null
         }
         renderExpenseActions={renderSummaryExpenseActions}
       />
