@@ -2018,10 +2018,6 @@ tooling) para recuperar ESLint en local y CI.
   en esta revision: `public/sw.js` solo tiene `install`/`activate`/`fetch`,
   sin `push` ni `pushsubscriptionchange`, y no hay `web-push`/VAPID en el
   proyecto.
-- Anadir verificacion de contrasenas comunes/comprometidas (lista negra o
-  servicio tipo HaveIBeenPwned). El resto de la politica ya esta al dia:
-  `passwordSchema` (`src/lib/validation/auth.ts:23-26`) exige minimo 10 y
-  maximo 128 caracteres y ya no impone reglas de composicion arbitrarias.
 
 ### Verificacion manual y produccion
 
@@ -2162,3 +2158,28 @@ tooling) para recuperar ESLint en local y CI.
 - Verificado con `tsc --noEmit`, `next build` (rutas `/admin/groups`,
   `/api/admin/groups*` compiladas sin error de tipado de rutas), `pnpm
   db:generate`/`db:migrate` contra `.env.local` y `vitest run` (104/104).
+
+## Verificacion de contrasenas comunes/comprometidas
+
+- **Nuevo `src/lib/auth/common-passwords.ts`** (`isCommonPassword`):
+  comprobacion totalmente local, sin llamada de red a ningun servicio
+  externo tipo HaveIBeenPwned (evita depender de conectividad en
+  registro/recuperacion, evita enviar cualquier derivada de la
+  contrasena fuera del proceso, y hace la comprobacion testeable sin red).
+  Rechaza dos categorias: una lista curada de contrasenas historicamente
+  mas filtradas (secuencias numericas/de teclado, palabras de diccionario
+  habituales, variantes triviales) y patrones que ningun listado fijo
+  puede cubrir (mismo caracter repetido, secuencias consecutivas
+  ascendentes/descendentes de 6+ caracteres tipo `abcdefgh` o `987654321`).
+- **`passwordSchema`** (`src/lib/validation/auth.ts`): anade un
+  `.refine(...)` que llama a `isCommonPassword`. Se aplica automaticamente
+  a los tres flujos que ya reutilizaban este esquema sin cambios
+  adicionales: registro (`registerSchema`), recuperacion de cuenta
+  (`recoverSchema.newPassword`) y reclamacion de un participante
+  provisional de Splitwise (`acceptInvitationSchema` en
+  `src/lib/validation/groups.ts`).
+- El resto de la politica ya estaba al dia (longitud minima/maxima sin
+  reglas de composicion arbitrarias); esto cierra el ultimo punto
+  pendiente del backlog de politica de contrasenas.
+- Nuevo `src/lib/auth/common-passwords.test.ts` (5 tests). Verificado con
+  `tsc --noEmit`, `next build` y `vitest run` (109/109).

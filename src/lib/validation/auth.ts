@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCommonPassword } from "@/lib/auth/common-passwords";
 
 export const usernameSchema = z
   .string()
@@ -20,10 +21,20 @@ export const displayNameSchema = z
   .min(1, "El nombre visible no puede estar vacio")
   .max(64, "El nombre visible no puede superar 64 caracteres");
 
+/**
+ * Longitud minima/maxima sin reglas de composicion arbitrarias (nada de
+ * exigir mayusculas/numeros/simbolos: NIST SP 800-63B las considera poco
+ * efectivas y fomentan patrones previsibles) mas un rechazo explicito de
+ * contrasenas demasiado comunes o con secuencias triviales
+ * (`isCommonPassword`, comprobacion local sin llamada de red).
+ */
 export const passwordSchema = z
   .string()
   .min(10, "La contrasena debe tener al menos 10 caracteres")
-  .max(128, "La contrasena es demasiado larga");
+  .max(128, "La contrasena es demasiado larga")
+  .refine((value) => !isCommonPassword(value), {
+    message: "Esta contrasena es demasiado comun o previsible; elige otra distinta",
+  });
 
 export const registerSchema = z.object({
   username: usernameSchema,
