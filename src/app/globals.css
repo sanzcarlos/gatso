@@ -197,3 +197,74 @@
     outline-offset: 2px;
   }
 }
+
+@keyframes gatso-loading-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -0.75rem, 0) scale(1.04);
+  }
+}
+
+@keyframes gatso-loading-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes gatso-loading-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-0.3rem);
+  }
+}
+
+.gatso-loading-orb {
+  animation: gatso-loading-float 5s ease-in-out infinite;
+}
+
+.gatso-loading-orb-delayed {
+  animation-delay: -2.5s;
+}
+
+.gatso-loading-halo {
+  animation: gatso-loading-halo 2.4s ease-in-out infinite;
+}
+
+.gatso-loading-dot {
+  animation: gatso-loading-dot 1.25s ease-in-out infinite;
+}
+
+.gatso-loading-dot-second {
+  animation-delay: 150ms;
+}
+
+.gatso-loading-dot-third {
+  animation-delay: 300ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gatso-loading-orb,
+  .gatso-loading-halo,
+  .gatso-loading-dot {
+    animation: none;
+  }
+
+  .gatso-loading-dot {
+    opacity: 0.7;
+  }
+}
