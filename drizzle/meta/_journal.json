@@ -113,6 +113,13 @@
       "when": 1785864806857,
       "tag": "0015_splitwise_provisional_users",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786036457746,
+      "tag": "0016_happy_beast",
+      "breakpoints": true
     }
   ]
 }

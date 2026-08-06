@@ -266,7 +266,7 @@ export default function GroupDetailClient({
   async function handleLeaveGroup() {
     const isLastMember = (members?.length ?? 0) <= 1;
     const confirmMessage = isLastMember
-      ? "Eres el unico miembro de este grupo. Si lo abandonas se borrara el grupo completo, con sus subgrupos y todos sus gastos. ¿Seguro que quieres continuar?"
+      ? "Eres el unico miembro de este grupo. Si lo abandonas se archivara: nadie podra usar su codigo de invitacion, pero el grupo, sus subgrupos y gastos se conservan hasta que un administrador de plataforma lo borre definitivamente o lo restaure. ¿Seguro que quieres continuar?"
       : "¿Seguro que quieres abandonar este grupo? Tus gastos ya registrados no se borraran.";
     if (!window.confirm(confirmMessage)) {
       return;
@@ -280,7 +280,7 @@ export default function GroupDetailClient({
         return;
       }
       const data = await response.json().catch(() => ({}));
-      toast.success(data.groupDeleted ? "Grupo eliminado" : "Has abandonado el grupo");
+      toast.success(data.groupArchived ? "Grupo archivado" : "Has abandonado el grupo");
       router.push("/groups");
     } finally {
       setLeavingGroup(false);

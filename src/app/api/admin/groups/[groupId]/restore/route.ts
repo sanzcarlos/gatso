@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/require-session";
-import { leaveGroup } from "@/lib/groups/service";
+import { restoreArchivedGroup } from "@/lib/groups/service";
 import { errorResponse } from "@/lib/api/handle-error";
 
 export const runtime = "nodejs";
@@ -16,8 +16,8 @@ export async function POST(_request: Request, { params }: RouteParams) {
   const { groupId } = await params;
 
   try {
-    const { groupArchived, membership } = await leaveGroup(groupId, auth.userId);
-    return NextResponse.json({ removed: membership, groupArchived });
+    const group = await restoreArchivedGroup(auth.userId, groupId);
+    return NextResponse.json({ group });
   } catch (error) {
     return errorResponse(error);
   }

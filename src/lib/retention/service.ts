@@ -1,6 +1,6 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, isNotNull, lt } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-import { db, authAttempts, notifications, appConfig, rateLimitAttempts } from "@/db";
+import { db, authAttempts, notifications, appConfig, rateLimitAttempts, groups } from "@/db";
 
 /**
  * Politica de retencion y limpieza (Backlog: "Definir retencion y
@@ -22,11 +22,13 @@ const AUTH_ATTEMPTS_RETENTION_DAYS_KEY = "auth_attempts_retention_days";
 const NOTIFICATIONS_RETENTION_DAYS_KEY = "read_notifications_retention_days";
 const EXCHANGE_RATES_RETENTION_DAYS_KEY = "exchange_rates_retention_days";
 const RATE_LIMIT_ATTEMPTS_RETENTION_DAYS_KEY = "rate_limit_attempts_retention_days";
+const ARCHIVED_GROUPS_RETENTION_DAYS_KEY = "archived_groups_retention_days";
 
 const DEFAULT_AUTH_ATTEMPTS_RETENTION_DAYS = 90;
 const DEFAULT_NOTIFICATIONS_RETENTION_DAYS = 60;
 const DEFAULT_EXCHANGE_RATES_RETENTION_DAYS = 90;
 const DEFAULT_RATE_LIMIT_ATTEMPTS_RETENTION_DAYS = 30;
+const DEFAULT_ARCHIVED_GROUPS_RETENTION_DAYS = 30;
 
 async function getConfigDays(key: string, fallback: number): Promise<number> {
   const [row] = await db.select({ value: appConfig.value }).from(appConfig).where(eq(appConfig.key, key)).limit(1);
@@ -112,15 +114,36 @@ export interface CleanupReport {
   readNotificationsDeleted: number;
   exchangeRatesDeleted: number;
   rateLimitAttemptsDeleted: number;
+  archivedGroupsDeleted: number;
+}
+
+/**
+ * Borra de forma definitiva los grupos archivados (Backlog: politica para
+ * grupos con cero miembros, ver `leaveGroup`) cuyo periodo de retencion ya
+ * ha vencido: eliminacion diferida, no inmediata, para dar tiempo a un
+ * administrador de plataforma a restaurarlos desde `/admin/groups` si el
+ * archivado fue un error o el ultimo miembro cambia de opinion. El borrado
+ * en cascada del esquema se encarga de subgrupos, membresias, gastos y
+ * repartos, invitaciones y notificaciones asociadas.
+ */
+export async function cleanupArchivedGroups(): Promise<number> {
+  const retentionDays = await getConfigDays(ARCHIVED_GROUPS_RETENTION_DAYS_KEY, DEFAULT_ARCHIVED_GROUPS_RETENTION_DAYS);
+  const result = await db
+    .delete(groups)
+    .where(and(isNotNull(groups.archivedAt), lt(groups.archivedAt, daysAgo(retentionDays))))
+    .returning({ id: groups.id });
+  return result.length;
 }
 
 /** Ejecuta toda la limpieza de retencion. Pensado para invocarse desde un job programado (ver `src/db/cleanup.ts`). */
 export async function runRetentionCleanup(): Promise<CleanupReport> {
-  const [authAttemptsDeleted, readNotificationsDeleted, exchangeRatesDeleted, rateLimitAttemptsDeleted] = await Promise.all([
-    cleanupAuthAttempts(),
-    cleanupReadNotifications(),
-    cleanupOldExchangeRates(),
-    cleanupRateLimitAttempts(),
-  ]);
-  return { authAttemptsDeleted, readNotificationsDeleted, exchangeRatesDeleted, rateLimitAttemptsDeleted };
+  const [authAttemptsDeleted, readNotificationsDeleted, exchangeRatesDeleted, rateLimitAttemptsDeleted, archivedGroupsDeleted] =
+    await Promise.all([
+      cleanupAuthAttempts(),
+      cleanupReadNotifications(),
+      cleanupOldExchangeRates(),
+      cleanupRateLimitAttempts(),
+      cleanupArchivedGroups(),
+    ]);
+  return { authAttemptsDeleted, readNotificationsDeleted, exchangeRatesDeleted, rateLimitAttemptsDeleted, archivedGroupsDeleted };
 }

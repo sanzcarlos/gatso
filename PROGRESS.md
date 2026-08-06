@@ -2018,11 +2018,6 @@ tooling) para recuperar ESLint en local y CI.
   en esta revision: `public/sw.js` solo tiene `install`/`activate`/`fetch`,
   sin `push` ni `pushsubscriptionchange`, y no hay `web-push`/VAPID en el
   proyecto.
-- Definir la politica para grupos con cero miembros: archivado, invalidacion
-  del codigo, eliminacion diferida o recuperacion administrativa. Verificado
-  en esta revision: `leaveGroup` (`src/lib/groups/service.ts:280-308`) sigue
-  borrando el grupo de forma inmediata cuando el ultimo miembro lo abandona,
-  sin archivado ni periodo de gracia.
 - Anadir verificacion de contrasenas comunes/comprometidas (lista negra o
   servicio tipo HaveIBeenPwned). El resto de la politica ya esta al dia:
   `passwordSchema` (`src/lib/validation/auth.ts:23-26`) exige minimo 10 y
@@ -2117,3 +2112,53 @@ tooling) para recuperar ESLint en local y CI.
   plataforma" y "Monedas".
 - Verificado con `tsc --noEmit`, `next build` (ruta `/admin/audit-log`
   compilada sin error de tipado de rutas) y `vitest run` (104/104).
+
+## Politica para grupos con cero miembros: archivado en vez de borrado inmediato
+
+- **Migracion `drizzle/0016_happy_beast.sql`**: nueva columna nullable
+  `groups.archived_at`. `NULL` significa grupo activo (con al menos un
+  miembro); una fecha significa archivado. Aplicada contra la base de
+  datos de `.env.local` con `pnpm db:migrate`.
+- **`leaveGroup`** (`src/lib/groups/service.ts`): cuando el ultimo miembro
+  abandona el grupo, antes se borraba de inmediato (grupo, subgrupos,
+  gastos, repartos, invitaciones y notificaciones via `onDelete:
+  "cascade"`). Ahora se ARCHIVA en su lugar (`archivedAt = now()`) y todo
+  ese contenido se conserva intacto. `joinGroupByInviteCode` anade
+  `isNull(groups.archivedAt)` a la busqueda por codigo, por lo que el
+  codigo de invitacion queda invalidado de forma automatica sin tener que
+  regenerarlo.
+- **`listArchivedGroups`/`restoreArchivedGroup`** (mismo fichero, solo
+  administradores de plataforma via `requirePlatformAdmin`): permiten
+  consultar los grupos archivados y devolverlos a estado activo
+  (`archivedAt = NULL`) antes de que se borren en la limpieza diferida.
+  Restaurar un grupo no le devuelve miembros: quien lo restaura debe
+  volver a usar el codigo de invitacion para unirse.
+- **Auditoria con visibilidad de plataforma**: los eventos de archivado y
+  restauracion se registran con `groupId: null` (en vez del `groupId` real
+  del grupo). Sin miembros, nadie podria consultarlos nunca en la
+  auditoria propia del grupo (`requireGroupAdmin` exige membresia); al
+  quedar con `groupId` nulo aparecen directamente en
+  `getPlatformAuditLog`/`/admin/audit-log`, replicando el mismo mecanismo
+  que antes ofrecia gratis el borrado en cascada (anulaba `groupId` en
+  todo el historial del grupo al desaparecer este). Los eventos
+  historicos previos al archivado (gastos, membresias...) mantienen su
+  `groupId` original y quedan inaccesibles hasta que el grupo se restaura
+  y alguien vuelve a ser administrador; se documenta como limitacion
+  conocida en vez de reescribir todo el historial.
+- **`cleanupArchivedGroups`** (`src/lib/retention/service.ts`, integrado en
+  `runRetentionCleanup`/`pnpm db:cleanup`): elimina de forma definitiva los
+  grupos archivados hace mas de `archived_groups_retention_days` (30 dias
+  por defecto, ajustable via `app_config` como el resto de retenciones).
+  Es la "eliminacion diferida": el borrado real solo ocurre si nadie lo
+  restaura antes del plazo.
+- **UI**: nueva pagina `/admin/groups`
+  (`src/app/(app)/admin/groups/admin-groups-client.tsx`) con tabla de
+  grupos archivados y boton "Restaurar" por fila; anadida como cuarta
+  tarjeta en `/admin`. En `group-detail-client.tsx`, el mensaje de
+  confirmacion al abandonar como ultimo miembro y el toast final se
+  actualizan de "se borrara"/"Grupo eliminado" a "se archivara"/"Grupo
+  archivado"; la respuesta de `POST /api/groups/:groupId/leave` renombra
+  el campo `groupDeleted` a `groupArchived`.
+- Verificado con `tsc --noEmit`, `next build` (rutas `/admin/groups`,
+  `/api/admin/groups*` compiladas sin error de tipado de rutas), `pnpm
+  db:generate`/`db:migrate` contra `.env.local` y `vitest run` (104/104).

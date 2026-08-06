@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { db, groups, memberships, subgroups, users } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
@@ -7,6 +7,7 @@ import { addUserToAllGroupSubgroups, removeUserFromAllGroupSubgroups } from "./s
 import { pickAdminReplacement } from "./admin-replacement";
 import { recordAuditLog } from "@/lib/audit/service";
 import { requireActiveCurrency } from "@/lib/currencies/service";
+import { requirePlatformAdmin } from "@/lib/auth/platform-admin";
 import { enforceGroupJoinRateLimit, recordGroupJoinAttempt } from "@/lib/rate-limit/service";
 import { GROUP_MAX_MEMBERS } from "@/lib/validation/groups";
 
@@ -141,7 +142,7 @@ export async function joinGroupByInviteCode(userId: string, inviteCode: string) 
       const [group] = await tx
         .select()
         .from(groups)
-        .where(eq(groups.inviteCode, inviteCode))
+        .where(and(eq(groups.inviteCode, inviteCode), isNull(groups.archivedAt)))
         .for("update")
         .limit(1);
       if (!group) throw new AppError(404, "Codigo de invitacion invalido", "invalid_invite_code");
@@ -256,25 +257,27 @@ export async function removeMember(groupId: string, actingUserId: string, target
  * (`pickAdminReplacement`) para que el grupo nunca quede sin
  * administrador mientras tenga miembros.
  *
- * Si es el ULTIMO miembro del grupo, en cambio, no tiene sentido dejar un
- * grupo vacio para siempre: se borra el grupo completo (grupo, subgrupos,
- * membresias, gastos y sus repartos, invitaciones y notificaciones
- * asociadas, pagos de liquidacion), aprovechando los `onDelete: "cascade"`
- * ya definidos en el esquema sobre `groups.id`. El registro de auditoria
- * de este borrado se escribe ANTES de ejecutar el `DELETE` (con `groupId`
- * todavia valido); el propio borrado en cascada anulara despues el
- * `groupId` de esa fila y de todas las demas que referenciaban este grupo
- * (permitido explicitamente por el trigger de inmutabilidad, ver
- * `drizzle/0010_audit_logs_allow_group_id_null.sql`: solo puede cambiar
- * `group_id` a NULL, nunca el resto del contenido). Si alguien vuelve a
- * usar el codigo de invitacion de un grupo ya borrado, `joinGroupByInviteCode`
- * simplemente no lo encuentra (404), igual que con cualquier otro codigo
- * invalido.
+ * Si es el ULTIMO miembro del grupo (Backlog: "definir la politica para
+ * grupos con cero miembros"), ya no se borra el grupo de inmediato: se
+ * ARCHIVA (`archivedAt = now()`), lo que invalida su codigo de invitacion
+ * sin necesidad de regenerarlo (`joinGroupByInviteCode` ignora los grupos
+ * archivados) y deja grupo, subgrupos, gastos y liquidaciones intactos.
+ * Un administrador de plataforma puede restaurarlo desde `/admin/groups`
+ * (`restoreArchivedGroup`) mientras siga archivado; pasado el periodo de
+ * retencion configurado, `cleanupArchivedGroups`
+ * (`src/lib/retention/service.ts`) lo borra de forma definitiva
+ * (eliminacion diferida), aprovechando entonces los `onDelete: "cascade"`
+ * del esquema. El evento de archivado se audita con `groupId: null` (en
+ * vez del `groupId` del propio grupo): sin miembros, nadie podria verlo
+ * nunca en la auditoria por grupo (`requireGroupAdmin` exige membresia),
+ * asi que se hace visible directamente en la auditoria de plataforma
+ * (`getPlatformAuditLog`, que solo lista entradas con `groupId IS NULL`),
+ * igual que antes ocurria automaticamente con el borrado en cascada.
  *
  * La fila de `groups` se bloquea (`for("update")`) antes que las de
  * `memberships`, siguiendo el mismo orden que `joinGroupByInviteCode`:
  * evita que alguien se una al grupo justo entre que se comprueba que no
- * quedan mas miembros y que se ejecuta el borrado (ambas operaciones
+ * quedan mas miembros y que se ejecuta el archivado (ambas operaciones
  * compiten por el mismo lock de fila, por lo que se serializan).
  */
 export async function leaveGroup(groupId: string, userId: string) {
@@ -293,18 +296,24 @@ export async function leaveGroup(groupId: string, userId: string) {
     const otherMembers = allMembers.filter((m) => m.userId !== userId);
 
     if (otherMembers.length === 0) {
+      const [archivedGroup] = await tx
+        .update(groups)
+        .set({ archivedAt: new Date() })
+        .where(eq(groups.id, groupId))
+        .returning();
+      if (!archivedGroup) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+
       await recordAuditLog(tx, {
         actorUserId: userId,
-        action: "delete",
+        action: "update",
         entityType: "group",
         entityId: group.id,
-        groupId,
-        beforeData: { group, leftVoluntarily: true, deletedBecauseLastMember: true },
+        groupId: null,
+        beforeData: { ...group, leftVoluntarily: true, archivedBecauseLastMember: true },
+        afterData: archivedGroup,
       });
 
-      await tx.delete(groups).where(eq(groups.id, groupId));
-
-      return { groupDeleted: true as const, membership };
+      return { groupArchived: true as const, membership };
     }
 
     if (membership.role === "admin") {
@@ -350,6 +359,53 @@ export async function leaveGroup(groupId: string, userId: string) {
       beforeData: { ...removed, leftVoluntarily: true },
     });
 
-    return { groupDeleted: false as const, membership: removed };
+    return { groupArchived: false as const, membership: removed };
+  });
+}
+
+/**
+ * Grupos archivados (sin miembros, ver `leaveGroup`), solo para
+ * administradores de plataforma: permite decidir si restaurarlos antes de
+ * que `cleanupArchivedGroups` los borre de forma definitiva.
+ */
+export async function listArchivedGroups(actingUserId: string) {
+  await requirePlatformAdmin(actingUserId);
+  return db.select().from(groups).where(isNotNull(groups.archivedAt)).orderBy(groups.archivedAt);
+}
+
+/**
+ * Restaura un grupo archivado (`archivedAt = NULL`) antes de que la
+ * limpieza diferida lo borre. El grupo vuelve a ser accesible con su
+ * mismo codigo de invitacion (nunca se modifico al archivar), pero sigue
+ * sin ningun miembro: quien lo restaura debe unirse de nuevo con ese
+ * codigo para poder verlo o gestionarlo. Igual que el archivado, se
+ * audita con `groupId: null` para que quede visible en la auditoria de
+ * plataforma en vez de perderse (nadie tiene membresia para consultar la
+ * auditoria propia del grupo).
+ */
+export async function restoreArchivedGroup(actingUserId: string, groupId: string) {
+  await requirePlatformAdmin(actingUserId);
+
+  return db.transaction(async (tx) => {
+    const [previousGroup] = await tx.select().from(groups).where(eq(groups.id, groupId)).limit(1);
+    if (!previousGroup) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+    if (!previousGroup.archivedAt) {
+      throw new AppError(409, "El grupo no esta archivado", "group_not_archived");
+    }
+
+    const [restored] = await tx.update(groups).set({ archivedAt: null }).where(eq(groups.id, groupId)).returning();
+    if (!restored) throw new AppError(404, "Grupo no encontrado", "group_not_found");
+
+    await recordAuditLog(tx, {
+      actorUserId: actingUserId,
+      action: "update",
+      entityType: "group",
+      entityId: restored.id,
+      groupId: null,
+      beforeData: previousGroup,
+      afterData: restored,
+    });
+
+    return restored;
   });
 }

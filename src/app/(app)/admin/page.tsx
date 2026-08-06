@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Coins, ScrollText, ShieldCheck, Users } from "lucide-react";
+import { Archive, Coins, ScrollText, ShieldCheck, Users } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
 import { isPlatformAdmin } from "@/lib/auth/platform-admin";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,12 @@ const ADMIN_SECTIONS = [
     icon: Coins,
     title: "Monedas",
     description: "Gestionar el catalogo global de monedas activas para crear gastos.",
+  },
+  {
+    href: "/admin/groups",
+    icon: Archive,
+    title: "Grupos archivados",
+    description: "Restaurar grupos sin miembros antes de que se borren de forma definitiva.",
   },
   {
     href: "/admin/audit-log",

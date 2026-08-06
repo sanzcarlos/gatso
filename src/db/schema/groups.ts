@@ -25,6 +25,19 @@ export const groups = pgTable("groups", {
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),
+  /**
+   * Grupo archivado (Backlog: politica para grupos con cero miembros):
+   * cuando el ultimo miembro abandona el grupo, en vez de borrarlo de
+   * inmediato se marca aqui la fecha y se invalida su codigo de
+   * invitacion (`joinGroupByInviteCode` ignora los grupos archivados),
+   * pero se conservan grupo, subgrupos y gastos. Un administrador de
+   * plataforma puede restaurarlo desde `/admin/groups` mientras siga
+   * archivado; pasado el periodo de retencion (`archived_groups_retention_days`
+   * en `app_config`), `cleanupArchivedGroups` lo borra de forma definitiva
+   * (eliminacion diferida, ver `src/lib/retention/service.ts`). `NULL`
+   * significa que el grupo esta activo (tiene al menos un miembro).
+   */
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

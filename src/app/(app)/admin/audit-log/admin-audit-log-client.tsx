@@ -14,13 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 interface AuditEntry {
   id: string;
   action: "create" | "update" | "delete";
-  entityType: "currency" | "user" | string;
+  entityType: "currency" | "user" | "group" | string;
   entityId: string;
   actorUserId: string;
   actorDisplayName: string;
   createdAt: string;
-  beforeData: { name?: string; isActive?: boolean; isPlatformAdmin?: boolean } | null;
-  afterData: { name?: string; isActive?: boolean; isPlatformAdmin?: boolean } | null;
+  beforeData: { name?: string; isActive?: boolean; isPlatformAdmin?: boolean; archivedAt?: string | null } | null;
+  afterData: { name?: string; isActive?: boolean; isPlatformAdmin?: boolean; archivedAt?: string | null } | null;
 }
 
 const ACTION_LABEL: Record<AuditEntry["action"], string> = {
@@ -32,6 +32,7 @@ const ACTION_LABEL: Record<AuditEntry["action"], string> = {
 const ENTITY_LABEL: Record<string, string> = {
   currency: "moneda",
   user: "usuario",
+  group: "grupo",
 };
 
 const ENTITY_TYPE_OPTIONS = Object.keys(ENTITY_LABEL);
@@ -47,6 +48,11 @@ function describeEntry(entry: AuditEntry): string {
   }
   if (entry.entityType === "currency" && typeof entry.afterData?.isActive === "boolean") {
     return entry.afterData.isActive ? `activo la moneda ${label}` : `desactivo la moneda ${label}`;
+  }
+  if (entry.entityType === "group" && entry.action === "update") {
+    return entry.afterData?.archivedAt
+      ? `archivo el grupo "${label}" al abandonarlo como ultimo miembro`
+      : `restauro el grupo archivado "${label}"`;
   }
   if (entry.action === "create") return `anadio ${entityLabel} "${label}"`;
   if (entry.action === "delete") return `elimino ${entityLabel} "${label}"`;
