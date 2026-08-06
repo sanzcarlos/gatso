@@ -246,7 +246,11 @@ export function GroupSummaryCard({
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Liquidacion</DialogTitle>
-            <DialogDescription>La forma mas sencilla de saldar las deudas pendientes de {name}.</DialogDescription>
+            <DialogDescription>
+              {scopeLabel === "grupo" && subgroups.length > 0
+                ? "Resumen global. Las deudas se marcan como pagadas dentro de cada subgrupo."
+                : `La forma mas sencilla de saldar las deudas pendientes de ${name}.`}
+            </DialogDescription>
           </DialogHeader>
           <SettlementCard
             settlements={settlements}

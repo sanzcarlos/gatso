@@ -1,5 +1,5 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { db, expenses, expenseShares, memberships, users, groups, currencies, settlementPayments } from "@/db";
+import { and, count, eq, inArray } from "drizzle-orm";
+import { db, expenses, expenseShares, memberships, users, groups, currencies, settlementPayments, subgroups } from "@/db";
 import { requireMembership } from "@/lib/groups/service";
 import { parseAmountToCents, centsToAmount } from "@/lib/money";
 import { convertCents } from "@/lib/exchange-rates/service";
@@ -9,6 +9,7 @@ import { AppError } from "@/lib/errors";
 import { SETTLEMENT_METHOD_LABEL, type SettlementPaymentMethod } from "./methods";
 import { minimizeTransactions } from "./optimize";
 import type { Balance } from "./optimize";
+import { settlementPaymentAppliesToScope } from "./scope";
 
 export interface SettlementBalance {
   userId: string;
@@ -106,19 +107,18 @@ export async function getGroupSettlement(
    * pendiente. Se aplican en el mismo ambito (grupo completo o subgrupo)
    * con el que se calculo esta liquidacion.
    */
-  const paymentCondition = subgroupId
-    ? and(eq(settlementPayments.groupId, groupId), eq(settlementPayments.subgroupId, subgroupId))
-    : and(eq(settlementPayments.groupId, groupId), isNull(settlementPayments.subgroupId));
   const paymentRows = await db
     .select({
       fromUserId: settlementPayments.fromUserId,
       toUserId: settlementPayments.toUserId,
       amount: settlementPayments.amount,
       currencyCode: settlementPayments.currencyCode,
+      subgroupId: settlementPayments.subgroupId,
     })
     .from(settlementPayments)
-    .where(paymentCondition);
+    .where(eq(settlementPayments.groupId, groupId));
   for (const p of paymentRows) {
+    if (!settlementPaymentAppliesToScope(subgroupId, p.subgroupId)) continue;
     const amountCents = parseAmountToCents(p.amount);
     addNet(p.currencyCode, p.fromUserId, amountCents);
     addNet(p.currencyCode, p.toUserId, -amountCents);
@@ -252,6 +252,27 @@ export async function recordSettlementPayment(
       "Solo los implicados en la deuda o un administrador pueden marcarla como pagada",
       "not_settlement_participant",
     );
+  }
+
+  if (input.subgroupId) {
+    const [subgroup] = await db
+      .select({ id: subgroups.id })
+      .from(subgroups)
+      .where(and(eq(subgroups.id, input.subgroupId), eq(subgroups.groupId, groupId)))
+      .limit(1);
+    if (!subgroup) throw new AppError(404, "Subgrupo no encontrado", "subgroup_not_found");
+  } else {
+    const [subgroupCount] = await db
+      .select({ value: count() })
+      .from(subgroups)
+      .where(eq(subgroups.groupId, groupId));
+    if ((subgroupCount?.value ?? 0) > 0) {
+      throw new AppError(
+        409,
+        "Este grupo tiene subgrupos; registra la liquidacion dentro del subgrupo correspondiente",
+        "settlement_requires_subgroup",
+      );
+    }
   }
 
   const [currency] = await db
