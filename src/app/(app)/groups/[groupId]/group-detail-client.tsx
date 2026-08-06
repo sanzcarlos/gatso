@@ -610,7 +610,7 @@ export default function GroupDetailClient({
               {subgroups.map((subgroup) => (
                 <li key={subgroup.id}>
                   <Link href={`/groups/${groupId}/subgroups/${subgroup.id}`}>
-                    <Badge variant="outline" className="cursor-pointer hover:bg-accent">
+                    <Badge variant="outline" className="cursor-pointer hover:bg-accent hover:text-accent-foreground">
                       {subgroup.name}
                     </Badge>
                   </Link>

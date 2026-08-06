@@ -412,7 +412,7 @@ export default function SubgroupDetailClient({
       <div className="flex flex-wrap gap-2">
         {members.map((member) => (
           <Link key={member.userId} href={`/users/${member.userId}`}>
-            <Badge variant="outline" className="flex items-center gap-1.5 hover:bg-accent">
+            <Badge variant="outline" className="flex items-center gap-1.5 hover:bg-accent hover:text-accent-foreground">
               <Avatar className="h-4 w-4">
                 <AvatarFallback className="text-[9px]">{member.displayName.slice(0, 2).toUpperCase()}</AvatarFallback>
               </Avatar>
