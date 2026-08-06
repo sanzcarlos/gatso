@@ -5,10 +5,12 @@ import Link from "next/link";
 import { Bell } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api/client-fetch";
+import { usePushSubscription } from "@/lib/push/use-push-subscription";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -39,6 +41,7 @@ export function NotificationsBell() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [open, setOpen] = useState(false);
+  const push = usePushSubscription();
 
   const load = useCallback(async () => {
     const response = await apiFetch("/api/notifications");
@@ -156,6 +159,19 @@ export function NotificationsBell() {
             >
               {loadingMore ? "Cargando..." : "Cargar mas"}
             </button>
+          </>
+        ) : null}
+        {push.state === "ready" ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={push.subscribed}
+              disabled={push.loading}
+              onSelect={(event) => event.preventDefault()}
+              onCheckedChange={() => push.toggle()}
+            >
+              Notificaciones push en este dispositivo
+            </DropdownMenuCheckboxItem>
           </>
         ) : null}
       </DropdownMenuContent>

@@ -8,8 +8,12 @@
 **Version actual: v0.8.0. Fase 11 — Importacion desde Splitwise completada
 y ampliada con participantes provisionales reclamables.** La prioridad
 media del backlog (paginacion por cursor, retencion/limpieza y rate
-limiting adicional) tambien esta completada. El principal pendiente
-tecnico son las pruebas de integracion/E2E con BD y navegador reales.
+limiting adicional) tambien esta completada. Toda la "Funcionalidad de
+producto pendiente" del backlog general tambien esta completada
+(administradores de plataforma, auditoria global, politica de grupos con
+cero miembros, contrasenas comunes y notificaciones push). El principal
+pendiente tecnico son las pruebas de integracion/E2E con BD y navegador
+reales.
 
 Las secciones historicas de cada fase conservan el estado que tenian en ese
 momento. Para conocer el trabajo vigente, consultar **Backlog aun pendiente**
@@ -2013,11 +2017,10 @@ tooling) para recuperar ESLint en local y CI.
 
 ### Funcionalidad de producto pendiente
 
-- Implementar notificaciones push con Push/Notification API, suscripciones
-  por dispositivo y contenido que no revele informacion sensible. Verificado
-  en esta revision: `public/sw.js` solo tiene `install`/`activate`/`fetch`,
-  sin `push` ni `pushsubscriptionchange`, y no hay `web-push`/VAPID en el
-  proyecto.
+Todos los puntos de este backlog (administradores de plataforma,
+auditoria global, politica de grupos con cero miembros, contrasenas
+comunes/comprometidas y notificaciones push) estan completados; ver las
+secciones dedicadas mas abajo para el detalle de cada implementacion.
 
 ### Verificacion manual y produccion
 
@@ -2183,3 +2186,54 @@ tooling) para recuperar ESLint en local y CI.
   pendiente del backlog de politica de contrasenas.
 - Nuevo `src/lib/auth/common-passwords.test.ts` (5 tests). Verificado con
   `tsc --noEmit`, `next build` y `vitest run` (109/109).
+
+## Notificaciones push (Web Push API)
+
+- **Nuevas dependencias**: `web-push` (runtime) + `@types/web-push` (dev).
+  Claves VAPID en `src/lib/env.ts` (`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
+  `VAPID_SUBJECT`), deliberadamente opcionales a nivel de esquema (mismo
+  criterio que las credenciales de Splitwise): si faltan, la app funciona
+  igual sin push en vez de romper el build/arranque en entornos sin
+  configurar. `src/lib/push/config.ts` (`isPushConfigured`/`getPushConfig`)
+  centraliza esa comprobacion en tiempo de ejecucion.
+- **Migracion `drizzle/0017_chubby_slyde.sql`**: nueva tabla
+  `push_subscriptions` (`userId`, `endpoint` unico, `p256dh`/`auth`), una
+  fila por dispositivo/navegador suscrito. Aplicada contra `.env.local`.
+- **`src/lib/push/service.ts`**: `saveSubscription` (upsert por
+  `endpoint`), `removeSubscription`, `hasActiveSubscription` y
+  `sendPushToUser` (best-effort: nunca lanza; borra automaticamente las
+  suscripciones que el navegador reporta como caducadas/revocadas,
+  codigos 404/410).
+- **Rutas**: `GET /api/push/config` (clave publica + si el usuario ya
+  esta suscrito), `POST /api/push/subscribe`, `POST /api/push/unsubscribe`.
+  Todas con `requireSession`.
+- **Envio real**: `updateExpense` (`src/lib/expenses/service.ts`) y
+  `recordSettlementPayment` (`src/lib/settlements/service.ts`) ahora
+  llaman a `sendPushToUser` justo DESPUES de que la transaccion que crea
+  la notificacion en BD ya se ha confirmado (nunca dentro de la
+  transaccion: es una llamada de red best-effort que no debe poder afectar
+  al guardado del gasto/pago ni a la auditoria). El contenido del push es
+  deliberadamente generico ("Un gasto que creaste necesita tu validacion.",
+  "Se ha registrado un pago en uno de tus grupos.") sin importes, nombres
+  ni descripciones: la notificacion del sistema puede verse en la pantalla
+  de bloqueo del dispositivo (Backlog: "contenido que no revele
+  informacion sensible").
+- **`public/sw.js`**: nuevos listeners `push` (muestra la notificacion con
+  `showNotification`), `notificationclick` (enfoca una pestana existente o
+  abre una nueva en la URL del grupo) y `pushsubscriptionchange`
+  (reintento best-effort de resuscripcion si el navegador rota el
+  endpoint).
+- **Cliente**: `src/lib/push/use-push-subscription.ts` (hook que consulta
+  `/api/push/config`, pide permiso y se suscribe/desuscribe explicitamente,
+  nunca de forma automatica) integrado como un `DropdownMenuCheckboxItem`
+  ("Notificaciones push en este dispositivo") en `NotificationsBell`. Se
+  oculta por completo si el navegador no soporta Push API, si el entorno
+  no tiene VAPID configurado, o fuera de produccion (el service worker
+  solo se registra en produccion, mismo criterio que
+  `ServiceWorkerRegister`).
+- Verificado con `tsc --noEmit`, `next build` (rutas `/api/push/*`
+  compiladas sin error), `pnpm db:generate`/`db:migrate` contra
+  `.env.local` y `vitest run` (109/109, sin tests nuevos: la parte
+  cubierta por tests unitarios preexistentes -formato de mensajes,
+  paginacion de notificaciones- no cambia; el envio real de push requiere
+  claves VAPID y un navegador real, fuera del alcance de Vitest).

@@ -7,6 +7,7 @@ import { getSubgroupInGroup } from "@/lib/groups/subgroup-service";
 import { requireActiveCurrency } from "@/lib/currencies/service";
 import { convertCents } from "@/lib/exchange-rates/service";
 import { createNotification, resolveExpenseNotifications } from "@/lib/notifications/service";
+import { sendPushToUser } from "@/lib/push/service";
 import { recordAuditLog } from "@/lib/audit/service";
 import { computeShares } from "./split-strategies";
 import { parseAmountToCents, centsToAmount } from "@/lib/money";
@@ -550,7 +551,7 @@ export async function updateExpense(
   const shares = computeShares(totalCents, input.split);
   const newStatus = isOwnExpense ? "modified" : "pending_validation";
 
-  return db.transaction(async (tx) => {
+  const updatedExpense = await db.transaction(async (tx) => {
     const [updatedExpense] = await tx
       .update(expenses)
       .set({
@@ -608,6 +609,25 @@ export async function updateExpense(
 
     return updatedExpense;
   });
+
+  /**
+   * El envio de la notificacion push se hace DESPUES de que la
+   * transaccion anterior ya se ha confirmado, nunca dentro de ella: es
+   * una llamada de red best-effort (`sendPushToUser` nunca lanza), y si
+   * fallara no debe poder revertir el guardado del gasto ni el registro
+   * de auditoria. El contenido evita amount/descripcion (Backlog:
+   * "contenido que no revele informacion sensible" en la notificacion
+   * del sistema/pantalla de bloqueo).
+   */
+  if (!isOwnExpense) {
+    await sendPushToUser(currentExpense.createdBy, {
+      title: "Gatso",
+      body: "Un gasto que creaste necesita tu validacion.",
+      url: `/groups/${groupId}`,
+    });
+  }
+
+  return updatedExpense;
 }
 
 /**

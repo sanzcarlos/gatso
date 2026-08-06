@@ -5,6 +5,7 @@ import { parseAmountToCents, centsToAmount } from "@/lib/money";
 import { convertCents } from "@/lib/exchange-rates/service";
 import { recordAuditLog } from "@/lib/audit/service";
 import { createNotification } from "@/lib/notifications/service";
+import { sendPushToUser } from "@/lib/push/service";
 import { AppError } from "@/lib/errors";
 import { SETTLEMENT_METHOD_LABEL, type SettlementPaymentMethod } from "./methods";
 import { minimizeTransactions } from "./optimize";
@@ -294,7 +295,10 @@ export async function recordSettlementPayment(
     throw new AppError(404, "Usuario no encontrado", "user_not_found");
   }
 
-  return db.transaction(async (tx) => {
+  const recipients = new Set([input.fromUserId, input.toUserId]);
+  recipients.delete(actingUserId);
+
+  const inserted = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(settlementPayments)
       .values({
@@ -319,8 +323,6 @@ export async function recordSettlementPayment(
       afterData: inserted,
     });
 
-    const recipients = new Set([input.fromUserId, input.toUserId]);
-    recipients.delete(actingUserId);
     const message = `${fromUser.displayName} ha pagado a ${toUser.displayName} ${centsToAmount(input.amountCents)} ${input.currencyCode} (${SETTLEMENT_METHOD_LABEL[input.method]}).`;
     for (const userId of recipients) {
       await createNotification(tx, {
@@ -333,4 +335,22 @@ export async function recordSettlementPayment(
 
     return inserted;
   });
+
+  /**
+   * Igual que en `updateExpense` (`src/lib/expenses/service.ts`): el push
+   * se envia SIEMPRE despues de confirmar la transaccion, nunca dentro, y
+   * con un texto generico sin importes ni nombres (Backlog: "contenido
+   * que no revele informacion sensible").
+   */
+  await Promise.all(
+    Array.from(recipients).map((userId) =>
+      sendPushToUser(userId, {
+        title: "Gatso",
+        body: "Se ha registrado un pago en uno de tus grupos.",
+        url: `/groups/${groupId}`,
+      }),
+    ),
+  );
+
+  return inserted;
 }

@@ -19,6 +19,16 @@ const envSchema = z.object({
   SPLITWISE_CLIENT_SECRET: z.string().optional(),
   /** Clave AES-256-GCM en hexadecimal (64 caracteres = 32 bytes) para cifrar tokens en reposo. */
   IMPORT_ENCRYPTION_KEY: z.string().optional(),
+  /**
+   * Notificaciones push (Web Push API): par de claves VAPID y el
+   * identificador de contacto que exige el protocolo (RFC 8292). Mismo
+   * criterio que las credenciales de Splitwise: opcionales a nivel de
+   * schema para no romper build/CI en entornos sin configurar, con
+   * comprobacion en tiempo de ejecucion en `src/lib/push/config.ts`.
+   */
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default("mailto:admin@example.com"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
