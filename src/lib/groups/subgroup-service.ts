@@ -1,5 +1,5 @@
 import { and, count, eq, inArray } from "drizzle-orm";
-import { db, groups, subgroups, subgroupMemberships, users } from "@/db";
+import { db, groups, memberships, subgroups, subgroupMemberships, users } from "@/db";
 import type { Tx } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/lib/db/errors";
@@ -46,6 +46,10 @@ export async function removeUserFromAllGroupSubgroups(tx: Tx, groupId: string, u
     );
 }
 
+export function buildSubgroupMembershipRows(subgroupId: string, userIds: string[]) {
+  return userIds.map((memberUserId) => ({ subgroupId, userId: memberUserId }));
+}
+
 export async function createSubgroup(groupId: string, userId: string, name: string) {
   await requireMembership(groupId, userId);
 
@@ -69,7 +73,11 @@ export async function createSubgroup(groupId: string, userId: string, name: stri
     try {
       const [subgroup] = await tx.insert(subgroups).values({ groupId, name, createdBy: userId }).returning();
       if (!subgroup) throw new AppError(500, "No se pudo crear el subgrupo");
-      await tx.insert(subgroupMemberships).values({ subgroupId: subgroup.id, userId });
+      const groupMembers = await tx
+        .select({ userId: memberships.userId })
+        .from(memberships)
+        .where(eq(memberships.groupId, groupId));
+      await tx.insert(subgroupMemberships).values(buildSubgroupMembershipRows(subgroup.id, groupMembers.map((member) => member.userId)));
       await recordAuditLog(tx, {
         actorUserId: userId,
         action: "create",
