@@ -313,7 +313,7 @@ export function GroupSummaryCard({
       <Dialog open={activeDialog === "participants"} onOpenChange={(open) => !open && setActiveDialog(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <div className="flex items-start justify-between gap-4 pr-8">
+            <div className="flex flex-col items-stretch gap-4 pr-8 sm:flex-row sm:items-start sm:justify-between">
               <div><DialogTitle>Participantes</DialogTitle><DialogDescription className="mt-1">Todas las personas incluidas en este {scopeLabel}.</DialogDescription></div>
               {participantAction}
             </div>

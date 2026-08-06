@@ -463,9 +463,9 @@ export default function SubgroupDetailClient({
           />
         }
         participantAction={availableMembers.length > 0 ? (
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
             <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
-              <SelectTrigger className="w-48" aria-label="Usuario del grupo para agregar">
+              <SelectTrigger className="min-w-0 flex-1 sm:w-48 sm:flex-none" aria-label="Usuario del grupo para agregar">
                 <SelectValue placeholder="Agregar usuario" />
               </SelectTrigger>
               <SelectContent>
