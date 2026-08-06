@@ -13,13 +13,13 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Gatso — Control de gastos compartidos",
+    name: "Gatso",
     short_name: "Gatso",
     description: "Control de gastos compartidos entre amigos, con privacidad por diseno.",
     start_url: "/",
     scope: "/",
     display: "standalone",
-    background_color: "#f8fafc",
+    background_color: "#4338ca",
     theme_color: "#4338ca",
     lang: "es",
     icons: [
