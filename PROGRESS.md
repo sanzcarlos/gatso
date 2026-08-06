@@ -5,18 +5,23 @@
 
 ## Estado actual
 
-**Fase completada: Fase 11 — Importacion desde Splitwise.** Ver tambien
-"Backlog general priorizado" mas abajo: la prioridad media (paginacion
-por cursor, retencion/limpieza y rate limiting adicional) esta
-completada.
+**Version actual: v0.8.0. Fase 11 — Importacion desde Splitwise completada
+y ampliada con participantes provisionales reclamables.** La prioridad
+media del backlog (paginacion por cursor, retencion/limpieza y rate
+limiting adicional) tambien esta completada. El principal pendiente
+tecnico son las pruebas de integracion/E2E con BD y navegador reales.
+
+Las secciones historicas de cada fase conservan el estado que tenian en ese
+momento. Para conocer el trabajo vigente, consultar **Backlog aun pendiente**
+al final del documento.
 
 ## Stack confirmado (versiones reales verificadas en npm registry, no supuestas)
 
-- Node.js **26.x** (LTS mas reciente en la fecha de trabajo)
+- Node.js **24.x** (version fijada en `package.json` y usada en el entorno actual)
 - TypeScript **7.0.2** (compilador nativo, `type: module`, estricto)
-- Next.js **16.2.12** (App Router), React **19.2.0**
+- Next.js **16.2.12** (App Router), React **19.2.8**
 - Gestor de paquetes: **pnpm 11.17.0**, fijado en `packageManager` de `package.json`
-- ORM: **Drizzle ORM** sobre **Neon serverless Postgres** (`@neondatabase/serverless`, driver HTTP)
+- ORM: **Drizzle ORM** sobre **Neon serverless Postgres** (`@neondatabase/serverless`, WebSocket/Pool para transacciones interactivas)
 - Validacion: **zod 4**
 - Hash de contrasenas: **argon2** (Fase 1)
 - Sesiones: JWT firmado con **jose** + cookie httpOnly (Fase 1)
@@ -1720,14 +1725,20 @@ comentario en el codigo correspondiente:
   gano un parametro interno `skipRateLimit` (nunca expuesto por HTTP)
   para no aplicar el limite de "1 gasto cada N segundos" a una
   importacion en lote legitima.
-- **Participantes sin cuenta Gatso**: decision documentada (v1) -- no
-  se crean cuentas con contrasenas ficticias (exigencia explicita del
-  diseno original); el usuario debe mapear cada participante de
-  Splitwise a un usuario Gatso que YA sea miembro del grupo destino
-  (invitandolo primero con el sistema de invitaciones existente si hace
-  falta). Los gastos que referencian un participante sin mapear no
-  bloquean el resto de la importacion: se registran como error
-  individual en `import_job_errors`.
+- **Participantes sin cuenta Gatso (ampliacion v0.8.0)**: si una persona
+  de Splitwise queda sin mapear, el importador crea una identidad
+  provisional (`users.is_provisional`) con el mismo `displayName` de
+  Splitwise, la anade al grupo y puede importar inmediatamente sus
+  gastos y pagos. En paralelo genera una invitacion pendiente vinculada
+  a su identificador externo. Al aceptar el enlace, la persona reclama
+  esa misma fila de usuario (se actualizan username/credenciales y
+  `is_provisional=false`), conservando UUID, membresias, gastos y
+  balances. Login y recuperacion rechazan explicitamente identidades
+  provisionales. Migracion: `0015_splitwise_provisional_users.sql`.
+- **Participantes historicos**: la vista previa ya no se limita a los
+  miembros actuales de `get_group`; incorpora tambien los perfiles
+  embebidos en los gastos historicos, por lo que una persona que abandono
+  el grupo puede conservar su nombre real de Splitwise y mapearse.
 - **Reconciliacion** (`reconciliation.ts`/`reconciliation-service.ts`):
   compara el `net_balance` que Splitwise ya calcula por gasto/usuario
   (mas fiable que recalcularlo) contra el balance que Gatso calcula para
@@ -1738,13 +1749,18 @@ comentario en el codigo correspondiente:
   que se hayan editado despues en Gatso; idempotente y auditado.
 - **UI** `/settings/import/splitwise`: asistente paso a paso completo
   (conectar, elegir grupo, vista previa, destino, mapeo, confirmar,
-  progreso con poll automatico, comprobar balances, revertir). Enlace
-  "Importar" anadido a `SiteHeader`.
-- Verificado en cada uno de los 8 sub-pasos de esta ronda con
-  `tsc --noEmit`, `vitest run` (94/94, incluye 41 tests nuevos de esta
-  fase: cliente/estado OAuth, mapeo financiero, paginacion,
+  barra de progreso porcentual con elementos procesados y polling
+  automatico, comprobar balances, invitaciones pendientes y revertir).
+  La creacion del job responde antes de ejecutar el primer chunk para que
+  el progreso sea visible desde el primer instante. Enlace "Importar"
+  anadido a `SiteHeader`.
+- Verificado tras la ampliacion v0.8.0 con `tsc --noEmit`, `vitest run`
+  (95/95; incluye cobertura de participantes historicos), `next build`
+  y `git diff --check`. La migracion 0015 fue generada con snapshot de
+  Drizzle y aplicada contra la BD configurada. La cobertura previa de la
+  fase (cliente/estado OAuth, mapeo financiero, paginacion,
   vista previa, clasificacion/estado de jobs, reconciliacion, cifrado de
-  secretos) y `next build`.
+  secretos) se mantiene.
 
 ### Limitaciones conocidas de esta implementacion (v1)
 
@@ -1776,12 +1792,10 @@ comentario en el codigo correspondiente:
   `reconciliation-service.ts`): correcto para el caso de uso principal
   (una importacion unica), sera necesario revisarlo si se implementan
   importaciones incrementales reales.
-- Pendiente de accion manual del usuario: registrar la app OAuth en
-  Splitwise (`https://dev.splitwise.com/`), configurar
-  `SPLITWISE_CLIENT_ID`/`SPLITWISE_CLIENT_SECRET`/`IMPORT_ENCRYPTION_KEY`
-  en cada entorno (dev/Preview/Production) con callbacks distintos, y
-  probar un flujo real de conexion+importacion contra la API real de
-  Splitwise (no ejecutado en este entorno de desarrollo).
+- La app OAuth y un flujo real de conexion/importacion ya se probaron en
+  el entorno actualmente configurado. Sigue siendo una tarea operativa
+  verificar por separado credenciales, callback y
+  `IMPORT_ENCRYPTION_KEY` en cada entorno Preview/Production.
 
 ## Backlog general priorizado
 
@@ -1891,6 +1905,20 @@ gastos, auditoria inmutable, monedas, notificaciones y PWA/offline. Se
 recomienda Postgres aislado para integracion y una suite E2E contra un build
 de produccion.
 
+Debe incluirse especificamente el flujo Splitwise v0.8.0: creacion
+idempotente del participante provisional, importacion de sus gastos y
+pagos, invitacion automatica, reclamacion de la misma identidad y
+conservacion de UUID/balances. `job-service.ts`, `invitation-service.ts`
+y las rutas que tocan BD/HTTP siguen sin cobertura de integracion.
+
+### Prioridad alta - restaurar lint
+
+`pnpm lint` no llega a analizar el proyecto porque la version instalada
+de `typescript-eslint` no soporta todavia TypeScript 7. El typecheck, los
+tests y el build pasan, pero hay que alinear esas dependencias (o usar
+temporalmente la API de TypeScript compatible recomendada por el propio
+tooling) para recuperar ESLint en local y CI.
+
 ### Prioridad media - escalabilidad y operacion (completado)
 
 #### Paginacion por cursor en gastos, notificaciones y auditoria
@@ -1985,8 +2013,6 @@ de produccion.
 
 ### Funcionalidad de producto pendiente
 
-- Registrar pagos reales e historial ("marcar como pagado"). Requiere una
-  entidad de pagos, permisos, auditoria, idempotencia y recalculo de saldos.
 - Implementar notificaciones push con Push/Notification API, suscripciones
   por dispositivo y contenido que no revele informacion sensible.
 - Anadir a la UI el abandono independiente de un subgrupo, conservando
@@ -1995,6 +2021,8 @@ de produccion.
   del codigo, eliminacion diferida o recuperacion administrativa.
 - Crear una UI segura y auditada para conceder/revocar administradores de
   plataforma, impidiendo retirar al ultimo administrador.
+- Crear una pantalla para la auditoria global de plataforma; la API ya
+  soporta filtros y paginacion, pero no tiene frontend propio.
 - Revisar la politica de contrasenas (comunes/comprometidas, longitud maxima
   y orientacion) sin reglas de composicion arbitrarias.
 
@@ -2005,7 +2033,9 @@ de produccion.
   sincronizacion tras cerrar/reabrir la app o reiniciar el dispositivo.
 - Verificar degradacion cuando IndexedDB no esta disponible, alcanza cuota o
   el navegador elimina datos locales.
-- Conectar Vercel; separar secretos de Preview/Production; proteger el
-  Environment `production` de GitHub; aplicar migraciones y seed; designar
-  el primer administrador de plataforma; verificar health, Argon2, region
-  de funciones y conectividad real con Neon.
+- Revisar periodicamente Vercel/Neon: separacion de secretos entre
+  Preview/Production, proteccion del Environment `production` de GitHub,
+  migraciones, health, Argon2, region de funciones y conectividad.
+- Verificar en Vercel que `CHUNK_TIME_BUDGET_MS = 8000` deja margen real
+  suficiente y que la barra de progreso avanza correctamente con grupos
+  grandes y varios chunks.
