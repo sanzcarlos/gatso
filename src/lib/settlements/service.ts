@@ -65,14 +65,16 @@ export async function getGroupSettlement(
     ? and(eq(expenses.groupId, groupId), eq(expenses.subgroupId, subgroupId))
     : eq(expenses.groupId, groupId);
 
-  const [expenseRows, [group]] = await Promise.all([
+  const [expenseRows, [group], [firstSubgroup]] = await Promise.all([
     db
       .select({ id: expenses.id, payerId: expenses.payerId, amount: expenses.amount, currencyCode: expenses.currencyCode })
       .from(expenses)
       .where(conditions),
     db.select({ baseCurrencyCode: groups.baseCurrencyCode }).from(groups).where(eq(groups.id, groupId)).limit(1),
+    db.select({ id: subgroups.id }).from(subgroups).where(eq(subgroups.groupId, groupId)).limit(1),
   ]);
   const baseCurrencyCode = group?.baseCurrencyCode ?? "EUR";
+  const groupHasSubgroups = Boolean(firstSubgroup);
 
   const expenseIds = expenseRows.map((e) => e.id);
   const shareRows = expenseIds.length
@@ -118,7 +120,7 @@ export async function getGroupSettlement(
     .from(settlementPayments)
     .where(eq(settlementPayments.groupId, groupId));
   for (const p of paymentRows) {
-    if (!settlementPaymentAppliesToScope(subgroupId, p.subgroupId)) continue;
+    if (!settlementPaymentAppliesToScope(subgroupId, p.subgroupId, groupHasSubgroups)) continue;
     const amountCents = parseAmountToCents(p.amount);
     addNet(p.currencyCode, p.fromUserId, amountCents);
     addNet(p.currencyCode, p.toUserId, -amountCents);

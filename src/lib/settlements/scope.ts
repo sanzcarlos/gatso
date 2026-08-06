@@ -6,7 +6,8 @@
 export function settlementPaymentAppliesToScope(
   requestedSubgroupId: string | undefined,
   paymentSubgroupId: string | null,
+  groupHasSubgroups: boolean,
 ): boolean {
-  return requestedSubgroupId === undefined || requestedSubgroupId === paymentSubgroupId;
+  if (requestedSubgroupId !== undefined) return requestedSubgroupId === paymentSubgroupId;
+  return groupHasSubgroups ? paymentSubgroupId !== null : paymentSubgroupId === null;
 }
-
