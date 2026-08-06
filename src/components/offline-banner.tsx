@@ -9,8 +9,8 @@ import { WifiOff } from "lucide-react";
  */
 export function OfflineBanner({ hasCachedData }: { hasCachedData: boolean }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-foreground">
-      <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+    <div className="flex items-start gap-2 rounded-md border border-warning bg-warning px-3 py-2 text-sm text-warning-foreground">
+      <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" aria-hidden="true" />
       <span>
         {hasCachedData
           ? "Sin conexion: mostrando los ultimos datos guardados en este dispositivo. Puede que falten cambios recientes."

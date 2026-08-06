@@ -144,7 +144,7 @@ export default function InviteAcceptClient({ token }: { token: string }) {
             />
           </div>
           {error ? (
-            <p role="alert" className="text-sm font-medium text-destructive">
+            <p role="alert" className="text-sm font-medium text-destructive-ink">
               {error}
             </p>
           ) : null}

@@ -141,7 +141,7 @@ function MarkPaidButton({ groupId, subgroupId, currencyCode, transaction, onPaid
               <p className="text-xs text-muted-foreground">De</p>
               <DisplayNameLink userId={transaction.fromUserId} displayName={transaction.fromDisplayName} hasLeftGroup={transaction.fromHasLeftGroup} />
             </div>
-            <ArrowRight className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            <ArrowRight className="h-4 w-4 shrink-0 text-primary-ink" aria-hidden="true" />
             <div className="min-w-0 text-right text-sm">
               <p className="text-xs text-muted-foreground">Para</p>
               <DisplayNameLink userId={transaction.toUserId} displayName={transaction.toDisplayName} hasLeftGroup={transaction.toHasLeftGroup} />
@@ -257,7 +257,7 @@ export function SettlementCard({
         </div>
       ) : pendingPayments === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-success/20 bg-success/5 px-4 py-8 text-center">
-          <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-success/15 text-success">
+          <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-success text-success-foreground">
             <CircleCheck className="h-6 w-6" aria-hidden="true" />
           </span>
           <p className="font-semibold text-foreground">Todo está saldado</p>
@@ -268,7 +268,7 @@ export function SettlementCard({
           {convertedOverall ? (
             <div className="flex flex-col gap-4 rounded-2xl border border-primary/25 bg-primary/5 p-4 sm:p-5">
               <div className="flex items-start gap-3">
-                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
                   <Scale className="h-4 w-4" aria-hidden="true" />
                 </span>
                 <div>
@@ -372,7 +372,7 @@ function SettlementDetail({
       {settlement.transactions.length > 0 ? (
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
-            <HandCoins className="h-4 w-4 text-primary" aria-hidden="true" />
+            <HandCoins className="h-4 w-4 text-primary-ink" aria-hidden="true" />
             <p className="text-sm font-semibold text-foreground">{isEstimate ? "Así quedarían las cuentas" : "Qué pagos hay que hacer"}</p>
           </div>
           <ol className="flex flex-col gap-3">
@@ -396,7 +396,7 @@ function SettlementDetail({
                           hasLeftGroup={transaction.fromHasLeftGroup}
                         />
                       </div>
-                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                         <ArrowRight className="h-4 w-4" aria-hidden="true" />
                       </span>
                       <div className="min-w-0 text-right text-sm">
@@ -441,7 +441,7 @@ function SettlementDetail({
           {settlement.balances.map((balance) => (
             <li key={balance.userId} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
               <DisplayNameLink userId={balance.userId} displayName={balance.displayName} hasLeftGroup={balance.hasLeftGroup} />
-              <span className={balance.netCents > 0 ? "font-semibold text-success" : "font-semibold text-destructive"}>
+              <span className={balance.netCents > 0 ? "font-semibold text-success-ink" : "font-semibold text-destructive-ink"}>
                 {balance.netCents > 0 ? "+" : "−"}{formatMoney(balance.netCents, settlement.currencyCode)}
               </span>
             </li>

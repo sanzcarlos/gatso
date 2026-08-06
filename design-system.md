@@ -75,16 +75,18 @@ inline` para generar automaticamente utilidades (`bg-primary`,
 | `background` / `foreground` | Fondo y texto por defecto de la pagina |
 | `card` / `card-foreground` | Superficies elevadas (tarjetas) |
 | `popover` / `popover-foreground` | Menus, dropdowns, contenido flotante |
-| `primary` / `primary-hover` / `primary-foreground` | Accion principal (botones, enlaces destacados) |
+| `primary` / `primary-hover` / `primary-foreground` | Superficie pastel de la accion principal y su tinta interna |
+| `primary-ink` | Enlaces, iconos y texto principal sobre fondos de pagina/tarjeta |
 | `secondary` / `secondary-foreground` | Accion secundaria, fondos sutiles |
 | `muted` / `muted-foreground` | Texto de apoyo, fondos neutros (skeletons, avatares) |
 | `accent` / `accent-foreground` | Resaltado de items activos/hover en menus |
-| `destructive` / `destructive-hover` / `destructive-foreground` | Acciones peligrosas, errores |
-| `success` / `success-foreground` | Confirmaciones, estados positivos |
-| `warning` / `warning-foreground` | Avisos |
-| `info` / `info-foreground` | Informacion neutra |
+| `destructive` / `destructive-hover` / `destructive-foreground` / `destructive-ink` | Superficie rosa pastel, tinta interna y tinta externa para errores |
+| `success` / `success-foreground` / `success-ink` | Superficie verde pastel y tintas para estados positivos |
+| `warning` / `warning-foreground` / `warning-ink` | Superficie amarilla pastel y tintas para avisos |
+| `info` / `info-foreground` / `info-ink` | Superficie azul pastel y tintas informativas |
 | `border` | Divisorias decorativas (no sujetas a 3:1, son cosmeticas) |
-| `input` / `ring` | Limites de componentes interactivos y anillo de foco (SI sujetos a >=3:1, WCAG 1.4.11) |
+| `input` / `ring` | Limites interactivos y foco; objetivo AAA >=4.5:1 (WCAG 1.4.11 exige AA >=3:1) |
+| `overlay` | Capa oscura semitransparente bajo dialogos modales |
 | `radius` (`sm`/`md`/`lg`/`xl`) | Radios de borde consistentes |
 | `shadow` (`sm`/`md`/`lg`) | Elevacion de tarjetas/modales |
 | `font-sans` | Tipografia por defecto (system-ui) |
@@ -93,55 +95,68 @@ inline` para generar automaticamente utilidades (`bg-primary`,
 
 Verificado con `scripts/check-contrast.mjs` (formula oficial de luminancia
 relativa de WCAG 2.1, sin dependencias externas — ejecutar con
-`node scripts/check-contrast.mjs`). Umbrales aplicados: **4.5:1** para
-texto normal (AA), **3:1** para texto grande/negrita o componentes de UI
-interactivos (AA), **7:1**/**4.5:1** respectivamente para AAA.
+`node scripts/check-contrast.mjs`). La auditoria se ha endurecido para que
+falle si cualquier pareja queda por debajo de **AAA**: 7:1 para texto
+normal y 4.5:1 para texto grande o componentes de interfaz.
 
-| Modo | Combinacion | Fondo | Texto | Ratio | Minimo AA | Resultado |
-|---|---|---|---|---|---|---|
-| Claro | background / foreground | `#f8fafc` | `#0f172a` | 17.06:1 | 4.5:1 | **AAA** |
-| Claro | card / card-foreground | `#ffffff` | `#0f172a` | 17.85:1 | 4.5:1 | **AAA** |
-| Claro | muted / muted-foreground | `#f1f5f9` | `#475569` | 6.92:1 | 4.5:1 | **AA** |
-| Claro | primary / primary-foreground | `#4338ca` | `#ffffff` | 7.90:1 | 4.5:1 | **AAA** |
-| Claro | secondary / secondary-foreground | `#eef2ff` | `#0f172a` | 15.97:1 | 4.5:1 | **AAA** |
-| Claro | destructive / destructive-foreground | `#b91c1c` | `#ffffff` | 6.47:1 | 4.5:1 | **AA** |
-| Claro | success / success-foreground | `#15803d` | `#ffffff` | 5.02:1 | 4.5:1 | **AA** |
-| Claro | warning / warning-foreground | `#a16207` | `#ffffff` | 4.92:1 | 4.5:1 | **AA** |
-| Claro | info / info-foreground | `#0369a1` | `#ffffff` | 5.93:1 | 4.5:1 | **AA** |
-| Claro | input/ring (UI) / background | `#64748b` | `#f8fafc` | 4.55:1 | 3:1 | **AAA** |
-| Claro | accent / accent-foreground | `#e0e7ff` | `#3730a3` | 8.06:1 | 4.5:1 | **AAA** |
-| Oscuro | background / foreground | `#090d14` | `#f1f5f9` | 17.76:1 | 4.5:1 | **AAA** |
-| Oscuro | card / card-foreground | `#111722` | `#f1f5f9` | 16.39:1 | 4.5:1 | **AAA** |
-| Oscuro | muted / muted-foreground | `#1e293b` | `#94a3b8` | 5.71:1 | 4.5:1 | **AA** |
-| Oscuro | primary / primary-foreground | `#818cf8` | `#090d14` | 6.52:1 | 4.5:1 | **AA** |
-| Oscuro | secondary / secondary-foreground | `#1e293b` | `#f1f5f9` | 13.35:1 | 4.5:1 | **AAA** |
-| Oscuro | destructive / destructive-foreground | `#f87171` | `#090d14` | 7.03:1 | 4.5:1 | **AAA** |
-| Oscuro | success / success-foreground | `#4ade80` | `#090d14` | 11.17:1 | 4.5:1 | **AAA** |
-| Oscuro | warning / warning-foreground | `#fbbf24` | `#090d14` | 11.66:1 | 4.5:1 | **AAA** |
-| Oscuro | info / info-foreground | `#38bdf8` | `#090d14` | 9.08:1 | 4.5:1 | **AAA** |
-| Oscuro | input/ring (UI) / background | `#64748b` | `#090d14` | 4.09:1 | 3:1 | **AA** |
-| Oscuro | accent / accent-foreground | `#312e81` | `#c7d2fe` | 7.66:1 | 4.5:1 | **AAA** |
+### Paleta pastel semantica
 
-**Resultado**: las 22 combinaciones cumplen AA; 14 de ellas alcanzan AAA.
-Ninguna combinacion usada en la interfaz esta por debajo del minimo AA.
+Los tonos pastel se usan como superficies y siempre se combinan con una
+"tinta" profunda. Los tokens `*-ink` evitan utilizar un pastel claro como
+texto sobre otra superficie clara. En modo oscuro, esas tintas externas
+pasan a su variante pastel luminosa.
 
-### Iteraciones realizadas (color que fallo y se corrigio)
+| Familia | Superficie pastel | Tinta interna | Tinta externa (claro / oscuro) |
+|---|---|---|---|
+| Lavanda principal | `#c9c2f0` | `#211a44` | `#514585` / `#c9c2f0` |
+| Lavanda secundaria | `#e8def8` | `#2f2147` | — |
+| Aqua de acento | `#d9edf0` | `#173f46` | — |
+| Rosa destructivo | `#f4c7c3` | `#571414` | `#571414` / `#f4c7c3` |
+| Verde de exito | `#c9e8d1` | `#153b21` | `#153b21` / `#c9e8d1` |
+| Amarillo de aviso | `#f3dfad` | `#513800` | `#513800` / `#f3dfad` |
+| Azul informativo | `#cbe4f4` | `#153c57` | `#153c57` / `#cbe4f4` |
 
-El token `border` inicial elegido para "limites de componentes
-interactivos" (`#cbd5e1` en claro / `#334155` en oscuro, tipicos grises de
-borde sutil) **fallo** el umbral de 3:1 (ratios de 1.48:1 y 1.86:1
-respectivamente) al medirlo con el script. Se sustituyo por `#64748b`
-(slate-500) en ambos modos, que sí supera 3:1 en los dos fondos, y se
-volvio a verificar con `check-contrast.mjs` antes de usarlo en produccion.
-Como consecuencia se separaron dos tokens distintos:
+| Modo | Combinacion | Fondo | Texto | Ratio | Resultado |
+|---|---|---|---|---|---|
+| Claro | background / foreground | `#fbfaf4` | `#25223a` | 14.67:1 | **AAA** |
+| Claro | card / card-foreground | `#fffdf8` | `#25223a` | 15.09:1 | **AAA** |
+| Claro | muted / muted-foreground | `#f1e9e2` | `#453d52` | 8.57:1 | **AAA** |
+| Claro | primary / primary-foreground | `#c9c2f0` | `#211a44` | 9.61:1 | **AAA** |
+| Claro | primary-hover / primary-foreground | `#b8afe8` | `#211a44` | 7.98:1 | **AAA** |
+| Claro | background / primary-ink | `#fbfaf4` | `#514585` | 7.91:1 | **AAA** |
+| Claro | secondary / secondary-foreground | `#e8def8` | `#2f2147` | 11.36:1 | **AAA** |
+| Claro | accent / accent-foreground | `#d9edf0` | `#173f46` | 9.44:1 | **AAA** |
+| Claro | destructive / destructive-foreground | `#f4c7c3` | `#571414` | 9.11:1 | **AAA** |
+| Claro | destructive-hover / destructive-foreground | `#eab0ad` | `#571414` | 7.46:1 | **AAA** |
+| Claro | success / success-foreground | `#c9e8d1` | `#153b21` | 9.50:1 | **AAA** |
+| Claro | warning / warning-foreground | `#f3dfad` | `#513800` | 8.34:1 | **AAA** |
+| Claro | info / info-foreground | `#cbe4f4` | `#153c57` | 8.78:1 | **AAA** |
+| Claro | input (UI) / background | `#665a8f` | `#fbfaf4` | 5.87:1 | **AAA UI** |
+| Claro | ring (UI) / background | `#5b4b8a` | `#fbfaf4` | 7.13:1 | **AAA UI** |
+| Oscuro | background / foreground | `#171521` | `#f7f1f5` | 16.18:1 | **AAA** |
+| Oscuro | card / card-foreground | `#211e2d` | `#f7f1f5` | 14.64:1 | **AAA** |
+| Oscuro | muted / muted-foreground | `#2a2734` | `#d7cedd` | 9.57:1 | **AAA** |
+| Oscuro | primary / primary-foreground | `#c9c2f0` | `#211a44` | 9.61:1 | **AAA** |
+| Oscuro | primary-hover / primary-foreground | `#ddd8f7` | `#211a44` | 11.76:1 | **AAA** |
+| Oscuro | background / primary-ink | `#171521` | `#c9c2f0` | 10.69:1 | **AAA** |
+| Oscuro | secondary / secondary-foreground | `#302b3d` | `#f7f1f5` | 12.25:1 | **AAA** |
+| Oscuro | accent / accent-foreground | `#d9edf0` | `#173f46` | 9.44:1 | **AAA** |
+| Oscuro | destructive / destructive-foreground | `#f4c7c3` | `#571414` | 9.11:1 | **AAA** |
+| Oscuro | destructive-hover / destructive-foreground | `#eab0ad` | `#571414` | 7.46:1 | **AAA** |
+| Oscuro | success / success-foreground | `#c9e8d1` | `#153b21` | 9.50:1 | **AAA** |
+| Oscuro | warning / warning-foreground | `#f3dfad` | `#513800` | 8.34:1 | **AAA** |
+| Oscuro | info / info-foreground | `#cbe4f4` | `#153c57` | 8.78:1 | **AAA** |
+| Oscuro | input (UI) / background | `#a99cbd` | `#171521` | 7.02:1 | **AAA UI** |
+| Oscuro | ring (UI) / background | `#c9c2f0` | `#171521` | 10.69:1 | **AAA UI** |
 
-- `border`: divisorias puramente decorativas (lineas entre filas de tabla,
-  separadores) — no sujeto al requisito de 3:1 porque WCAG 1.4.11
-  (Non-text Contrast) aplica a los limites de **componentes de interfaz e
-  indicadores de estado**, no a divisores cosmeticos sin funcion.
-- `input` / `ring`: limites de campos de formulario y anillos de foco —
-  estos SI son un requisito de accesibilidad real y usan `#64748b`,
-  verificado >=3:1 en ambos modos.
+Las parejas de tinta externa de estados (`success-ink`, `warning-ink`,
+`info-ink` y `destructive-ink`) tambien se verifican en el script; sus
+ratios oscilan entre 10.48:1 y 13.70:1. En total se comprueban 38 parejas
+y todas alcanzan AAA.
+
+`border` queda reservado a divisorias cosmeticas. `input` y `ring` se
+usan en limites interactivos y foco, y ambos superan el umbral AAA de
+4.5:1 para componentes de interfaz en claro y oscuro.
 
 ## Catalogo de componentes (`src/components/ui/`)
 
@@ -184,7 +199,7 @@ npx -y lighthouse http://localhost:3000 --only-categories=accessibility --view
 Objetivo: puntuacion >= 90. Dado que se han usado primitivos Radix
 (landmarks, roles y estados ARIA correctos out-of-the-box), HTML semantico
 (`<table>` reales, `<label htmlFor>`, `<button>` reales en vez de `<div
-onClick>`) y contraste verificado matematicamente >= AA en todas las
+onClick>`) y contraste verificado matematicamente AAA en todas las
 combinaciones, es razonable esperar que se alcance el objetivo, pero esto
 **no sustituye la ejecucion real** — queda anotado como pendiente de
 verificacion en `PROGRESS.md`.

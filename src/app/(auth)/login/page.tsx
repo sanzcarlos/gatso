@@ -60,7 +60,7 @@ export default function LoginPage() {
             />
           </div>
           {error ? (
-            <p role="alert" className="text-sm font-medium text-destructive">
+            <p role="alert" className="text-sm font-medium text-destructive-ink">
               {error}
             </p>
           ) : null}
@@ -70,10 +70,10 @@ export default function LoginPage() {
             {loading ? "Entrando..." : "Entrar"}
           </Button>
           <div className="flex w-full justify-between text-sm text-muted-foreground">
-            <Link href="/recover" className="font-medium text-primary hover:underline">
+            <Link href="/recover" className="font-medium text-primary-ink hover:underline">
               Olvide mi contrasena
             </Link>
-            <Link href="/register" className="font-medium text-primary hover:underline">
+            <Link href="/register" className="font-medium text-primary-ink hover:underline">
               Crear cuenta
             </Link>
           </div>

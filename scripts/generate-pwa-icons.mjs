@@ -30,7 +30,7 @@ const targets = [
 for (const { file, size } of targets) {
   const resvg = new Resvg(svg, {
     fitTo: { mode: "width", value: size },
-    background: "#4338ca",
+    background: "#c9c2f0",
   });
   const png = resvg.render().asPng();
   writeFileSync(join(root, "public", "icons", file), png);
@@ -42,7 +42,7 @@ for (const { file, size } of targets) {
 // <link rel="apple-touch-icon"> sin tocar layout.tsx.
 const appleIcon = new Resvg(svg, {
   fitTo: { mode: "width", value: 180 },
-  background: "#4338ca",
+  background: "#c9c2f0",
 }).render().asPng();
 writeFileSync(join(root, "src", "app", "apple-icon.png"), appleIcon);
 console.log("generado src/app/apple-icon.png (180x180)");

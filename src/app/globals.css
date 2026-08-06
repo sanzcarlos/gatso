@@ -25,93 +25,105 @@
   /* Colores base — modo claro. Ratios de contraste verificados con
      scripts/check-contrast.mjs (formula WCAG 2.1 oficial); ver tabla
      completa en design-system.md. */
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #fbfaf4;
+  --foreground: #25223a;
 
-  --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card: #fffdf8;
+  --card-foreground: #25223a;
 
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover: #fffdf8;
+  --popover-foreground: #25223a;
 
-  --primary: #4338ca;
-  --primary-hover: #3730a3;
-  --primary-foreground: #ffffff;
+  --primary: #c9c2f0;
+  --primary-hover: #b8afe8;
+  --primary-foreground: #211a44;
+  --primary-ink: #514585;
 
-  --secondary: #eef2ff;
-  --secondary-foreground: #0f172a;
+  --secondary: #e8def8;
+  --secondary-foreground: #2f2147;
 
-  --muted: #f1f5f9;
-  --muted-foreground: #475569;
+  --muted: #f1e9e2;
+  --muted-foreground: #453d52;
 
-  --accent: #e0e7ff;
-  --accent-foreground: #3730a3;
+  --accent: #d9edf0;
+  --accent-foreground: #173f46;
 
-  --destructive: #b91c1c;
-  --destructive-hover: #991b1b;
-  --destructive-foreground: #ffffff;
+  --destructive: #f4c7c3;
+  --destructive-hover: #eab0ad;
+  --destructive-foreground: #571414;
+  --destructive-ink: #571414;
 
-  --success: #15803d;
-  --success-foreground: #ffffff;
+  --success: #c9e8d1;
+  --success-foreground: #153b21;
+  --success-ink: #153b21;
 
-  --warning: #a16207;
-  --warning-foreground: #ffffff;
+  --warning: #f3dfad;
+  --warning-foreground: #513800;
+  --warning-ink: #513800;
 
-  --info: #0369a1;
-  --info-foreground: #ffffff;
+  --info: #cbe4f4;
+  --info-foreground: #153c57;
+  --info-ink: #153c57;
 
   /* `border`: divisorias decorativas de baja intensidad (no sujetas al
      requisito WCAG 1.4.11 de 3:1, por ser puramente cosmeticas). */
-  --border: #dfe5ee;
+  --border: #ddd5e4;
   /* `input` / `ring`: limites de componentes interactivos (inputs, foco).
-     Estas SI deben cumplir >=3:1 contra el fondo — verificado. */
-  --input: #64748b;
-  --ring: #4338ca;
+     Superan 4.5:1 contra el fondo (nivel AAA para UI/grande). */
+  --input: #665a8f;
+  --ring: #5b4b8a;
+  --overlay: #171521;
 
-  --shadow-color: 15 23 42;
+  --shadow-color: 37 34 58;
 }
 
 .dark {
-  --background: #090d14;
-  --foreground: #f1f5f9;
+  --background: #171521;
+  --foreground: #f7f1f5;
 
-  --card: #111722;
-  --card-foreground: #f1f5f9;
+  --card: #211e2d;
+  --card-foreground: #f7f1f5;
 
-  --popover: #111827;
-  --popover-foreground: #f1f5f9;
+  --popover: #211e2d;
+  --popover-foreground: #f7f1f5;
 
-  --primary: #818cf8;
-  --primary-hover: #a5b4fc;
-  --primary-foreground: #0b0f14;
+  --primary: #c9c2f0;
+  --primary-hover: #ddd8f7;
+  --primary-foreground: #211a44;
+  --primary-ink: #c9c2f0;
 
-  --secondary: #1e293b;
-  --secondary-foreground: #f1f5f9;
+  --secondary: #302b3d;
+  --secondary-foreground: #f7f1f5;
 
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
+  --muted: #2a2734;
+  --muted-foreground: #d7cedd;
 
-  --accent: #312e81;
-  --accent-foreground: #c7d2fe;
+  --accent: #d9edf0;
+  --accent-foreground: #173f46;
 
-  --destructive: #f87171;
-  --destructive-hover: #fca5a5;
-  --destructive-foreground: #0b0f14;
+  --destructive: #f4c7c3;
+  --destructive-hover: #eab0ad;
+  --destructive-foreground: #571414;
+  --destructive-ink: #f4c7c3;
 
-  --success: #4ade80;
-  --success-foreground: #0b0f14;
+  --success: #c9e8d1;
+  --success-foreground: #153b21;
+  --success-ink: #c9e8d1;
 
-  --warning: #fbbf24;
-  --warning-foreground: #0b0f14;
+  --warning: #f3dfad;
+  --warning-foreground: #513800;
+  --warning-ink: #f3dfad;
 
-  --info: #38bdf8;
-  --info-foreground: #0b0f14;
+  --info: #cbe4f4;
+  --info-foreground: #153c57;
+  --info-ink: #cbe4f4;
 
-  --border: #263244;
-  --input: #64748b;
-  --ring: #818cf8;
+  --border: #4b4559;
+  --input: #a99cbd;
+  --ring: #c9c2f0;
+  --overlay: #09080d;
 
-  --shadow-color: 0 0 0;
+  --shadow-color: 8 7 12;
 }
 
 @theme inline {
@@ -127,6 +139,7 @@
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-ink: var(--primary-ink);
 
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -140,19 +153,24 @@
   --color-destructive: var(--destructive);
   --color-destructive-hover: var(--destructive-hover);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-ink: var(--destructive-ink);
 
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-success-ink: var(--success-ink);
 
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-warning-ink: var(--warning-ink);
 
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-info-ink: var(--info-ink);
 
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

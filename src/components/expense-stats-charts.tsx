@@ -98,7 +98,7 @@ export function ExpenseStatsCharts({
   if (stats.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-5 py-12 text-center">
-        <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary text-primary-foreground">
           <ChartNoAxesCombined className="h-6 w-6" />
         </span>
         <p className="mt-4 font-semibold text-foreground">Aun no hay datos que analizar</p>
@@ -117,7 +117,7 @@ export function ExpenseStatsCharts({
               <CircleDollarSign className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Vision consolidada</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-ink">Vision consolidada</p>
               <p className="mt-1 text-sm text-muted-foreground">Total de todas las monedas convertido a {baseCurrencyCode}</p>
             </div>
             <p className="shrink-0 text-xl font-bold tabular-nums tracking-tight sm:text-2xl">
@@ -159,7 +159,7 @@ function CurrencyCharts({ stats }: { stats: CurrencyExpenseStats }) {
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/70 bg-muted/25 px-5 py-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-bold tracking-wide text-primary">
+            <span className="rounded-md bg-primary px-2 py-1 text-xs font-bold tracking-wide text-primary-foreground">
               {stats.currencyCode}
             </span>
             <h3 className="font-semibold tracking-tight">Desglose de gastos</h3>

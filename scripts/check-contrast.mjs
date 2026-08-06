@@ -39,41 +39,58 @@ function verdict(ratio, isLargeOrUi) {
 
 const pairs = [
   // [nombre, fondo, texto, esGrandeOUi, modo]
-  ["background / foreground", "#f8fafc", "#0f172a", false, "claro"],
-  ["card / card-foreground", "#ffffff", "#0f172a", false, "claro"],
-  ["muted / muted-foreground", "#f1f5f9", "#475569", false, "claro"],
-  ["primary / primary-foreground", "#4338ca", "#ffffff", false, "claro"],
-  ["secondary / secondary-foreground", "#eef2ff", "#0f172a", false, "claro"],
-  ["destructive / destructive-foreground", "#b91c1c", "#ffffff", false, "claro"],
-  ["success / success-foreground", "#15803d", "#ffffff", false, "claro"],
-  ["warning / warning-foreground", "#a16207", "#ffffff", false, "claro"],
-  ["info / info-foreground", "#0369a1", "#ffffff", false, "claro"],
-  ["border (UI) / background", "#64748b", "#f8fafc", true, "claro"],
-  ["accent / accent-foreground", "#e0e7ff", "#3730a3", false, "claro"],
-  ["background / foreground", "#090d14", "#f1f5f9", false, "oscuro"],
-  ["card / card-foreground", "#111722", "#f1f5f9", false, "oscuro"],
-  ["muted / muted-foreground", "#1e293b", "#94a3b8", false, "oscuro"],
-  ["primary / primary-foreground", "#818cf8", "#090d14", false, "oscuro"],
-  ["secondary / secondary-foreground", "#1e293b", "#f1f5f9", false, "oscuro"],
-  ["destructive / destructive-foreground", "#f87171", "#090d14", false, "oscuro"],
-  ["success / success-foreground", "#4ade80", "#090d14", false, "oscuro"],
-  ["warning / warning-foreground", "#fbbf24", "#090d14", false, "oscuro"],
-  ["info / info-foreground", "#38bdf8", "#090d14", false, "oscuro"],
-  ["border (UI) / background", "#64748b", "#090d14", true, "oscuro"],
-  ["accent / accent-foreground", "#312e81", "#c7d2fe", false, "oscuro"],
+  ["background / foreground", "#fbfaf4", "#25223a", false, "claro"],
+  ["card / card-foreground", "#fffdf8", "#25223a", false, "claro"],
+  ["muted / muted-foreground", "#f1e9e2", "#453d52", false, "claro"],
+  ["primary / primary-foreground", "#c9c2f0", "#211a44", false, "claro"],
+  ["primary-hover / primary-foreground", "#b8afe8", "#211a44", false, "claro"],
+  ["background / primary-ink", "#fbfaf4", "#514585", false, "claro"],
+  ["secondary / secondary-foreground", "#e8def8", "#2f2147", false, "claro"],
+  ["accent / accent-foreground", "#d9edf0", "#173f46", false, "claro"],
+  ["destructive / destructive-foreground", "#f4c7c3", "#571414", false, "claro"],
+  ["destructive-hover / destructive-foreground", "#eab0ad", "#571414", false, "claro"],
+  ["background / destructive-ink", "#fbfaf4", "#571414", false, "claro"],
+  ["success / success-foreground", "#c9e8d1", "#153b21", false, "claro"],
+  ["background / success-ink", "#fbfaf4", "#153b21", false, "claro"],
+  ["warning / warning-foreground", "#f3dfad", "#513800", false, "claro"],
+  ["background / warning-ink", "#fbfaf4", "#513800", false, "claro"],
+  ["info / info-foreground", "#cbe4f4", "#153c57", false, "claro"],
+  ["background / info-ink", "#fbfaf4", "#153c57", false, "claro"],
+  ["input (UI) / background", "#665a8f", "#fbfaf4", true, "claro"],
+  ["ring (UI) / background", "#5b4b8a", "#fbfaf4", true, "claro"],
+  ["background / foreground", "#171521", "#f7f1f5", false, "oscuro"],
+  ["card / card-foreground", "#211e2d", "#f7f1f5", false, "oscuro"],
+  ["muted / muted-foreground", "#2a2734", "#d7cedd", false, "oscuro"],
+  ["primary / primary-foreground", "#c9c2f0", "#211a44", false, "oscuro"],
+  ["primary-hover / primary-foreground", "#ddd8f7", "#211a44", false, "oscuro"],
+  ["background / primary-ink", "#171521", "#c9c2f0", false, "oscuro"],
+  ["secondary / secondary-foreground", "#302b3d", "#f7f1f5", false, "oscuro"],
+  ["accent / accent-foreground", "#d9edf0", "#173f46", false, "oscuro"],
+  ["destructive / destructive-foreground", "#f4c7c3", "#571414", false, "oscuro"],
+  ["destructive-hover / destructive-foreground", "#eab0ad", "#571414", false, "oscuro"],
+  ["background / destructive-ink", "#171521", "#f4c7c3", false, "oscuro"],
+  ["success / success-foreground", "#c9e8d1", "#153b21", false, "oscuro"],
+  ["background / success-ink", "#171521", "#c9e8d1", false, "oscuro"],
+  ["warning / warning-foreground", "#f3dfad", "#513800", false, "oscuro"],
+  ["background / warning-ink", "#171521", "#f3dfad", false, "oscuro"],
+  ["info / info-foreground", "#cbe4f4", "#153c57", false, "oscuro"],
+  ["background / info-ink", "#171521", "#cbe4f4", false, "oscuro"],
+  ["input (UI) / background", "#a99cbd", "#171521", true, "oscuro"],
+  ["ring (UI) / background", "#c9c2f0", "#171521", true, "oscuro"],
 ];
 
 console.log("| Modo | Combinacion | Fondo | Texto | Ratio | Minimo requerido | Resultado |");
 console.log("|---|---|---|---|---|---|---|");
-let anyFail = false;
+let anyBelowAaa = false;
 for (const [name, bg, fg, isLargeOrUi, mode] of pairs) {
   const ratio = contrastRatio(bg, fg);
   const result = verdict(ratio, isLargeOrUi);
-  if (result === "FAIL") anyFail = true;
-  const minLabel = isLargeOrUi ? "3:1 (AA UI/grande)" : "4.5:1 (AA texto)";
+  if (result !== "AAA") anyBelowAaa = true;
+  const minLabel = isLargeOrUi ? "4.5:1 (AAA UI/grande)" : "7:1 (AAA texto)";
   console.log(
     `| ${mode} | ${name} | ${bg} | ${fg} | ${ratio.toFixed(2)}:1 | ${minLabel} | ${result} |`,
   );
 }
 console.log("");
-console.log(anyFail ? "RESULTADO: hay combinaciones que fallan AA." : "RESULTADO: todas las combinaciones cumplen AA (o mejor).");
+console.log(anyBelowAaa ? "RESULTADO: hay combinaciones por debajo de AAA." : "RESULTADO: todas las combinaciones verificadas cumplen AAA.");
+if (anyBelowAaa) process.exitCode = 1;

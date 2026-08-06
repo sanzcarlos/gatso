@@ -1,7 +1,7 @@
 export default function Loading() {
   return (
     <main
-      className="relative isolate grid min-h-dvh place-items-center overflow-hidden px-6 py-10"
+      className="relative isolate grid min-h-dvh place-items-center overflow-hidden bg-accent px-6 py-10"
       aria-live="polite"
       aria-busy="true"
     >
@@ -29,7 +29,7 @@ export default function Loading() {
           </div>
         </div>
 
-        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-primary">Gatso</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-primary-ink">Gatso</p>
         <h1 className="mt-3 text-balance text-2xl font-bold tracking-tight text-foreground">
           Preparando tus cuentas
         </h1>

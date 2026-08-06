@@ -31,7 +31,7 @@ export default async function HomePage() {
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-14 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
         <section className="grid items-center gap-12 lg:grid-cols-[1.08fr_.92fr]">
           <div>
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground">
               <ShieldCheck className="h-4 w-4" /> Privacidad por diseno
             </div>
             <h1 className="max-w-3xl text-balance text-4xl font-bold tracking-[-0.04em] text-foreground sm:text-6xl sm:leading-[1.05]">
@@ -56,16 +56,16 @@ export default async function HomePage() {
             <div className="rounded-[2rem] border border-border/80 bg-card/80 p-5 shadow-lg backdrop-blur-xl sm:p-7">
               <div className="flex items-center justify-between border-b border-border pb-5">
                 <div><p className="text-sm text-muted-foreground">Viaje de verano</p><p className="mt-1 text-xl font-bold">Resumen del grupo</p></div>
-                <span className="rounded-xl bg-success/10 px-3 py-1 text-sm font-semibold text-success">Al dia</span>
+                <span className="rounded-xl bg-success px-3 py-1 text-sm font-semibold text-success-foreground">Al dia</span>
               </div>
               <div className="grid grid-cols-2 gap-3 py-5">
                 <div className="rounded-2xl bg-muted/70 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</p><p className="mt-2 text-2xl font-bold">1.284,60 EUR</p></div>
-                <div className="rounded-2xl bg-primary/10 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-primary">Movimientos</p><p className="mt-2 text-2xl font-bold">24</p></div>
+                <div className="rounded-2xl bg-primary p-4 text-primary-foreground"><p className="text-xs font-semibold uppercase tracking-wide">Movimientos</p><p className="mt-2 text-2xl font-bold">24</p></div>
               </div>
               <div className="space-y-3">
                 {[['Casa rural', '420,00 EUR'], ['Compra del finde', '126,40 EUR'], ['Gasolina', '84,20 EUR']].map(([label, value], index) => (
                   <div key={label} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/60 p-3">
-                    <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary"><ReceiptText className="h-5 w-5" /></span>
+                    <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-primary-foreground"><ReceiptText className="h-5 w-5" /></span>
                     <div className="min-w-0 flex-1"><p className="truncate font-semibold">{label}</p><p className="text-xs text-muted-foreground">{index + 2} participantes</p></div>
                     <p className="font-semibold tabular-nums">{value}</p>
                   </div>
@@ -78,7 +78,7 @@ export default async function HomePage() {
         <section className="mt-20 grid gap-4 sm:grid-cols-3">
           {homeFeatures.map(({ icon: Icon, title, description }) => (
             <div key={title} className="rounded-2xl border border-border/80 bg-card/65 p-6 shadow-sm backdrop-blur-sm">
-              <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><Icon className="h-5 w-5" /></span>
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground"><Icon className="h-5 w-5" /></span>
               <h2 className="mt-5 text-lg font-bold tracking-tight">{title}</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
             </div>

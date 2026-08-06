@@ -7,7 +7,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_28rem] lg:px-8 lg:py-16">
         <section className="hidden lg:block">
           <div className="max-w-xl">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground">
               Privacidad desde el primer dia
             </div>
             <h1 className="text-balance text-5xl font-bold tracking-tight text-foreground">

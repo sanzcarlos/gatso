@@ -96,7 +96,7 @@ export default function RecoverPage() {
             />
           </div>
           {error ? (
-            <p role="alert" className="text-sm font-medium text-destructive">
+            <p role="alert" className="text-sm font-medium text-destructive-ink">
               {error}
             </p>
           ) : null}

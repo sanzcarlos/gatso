@@ -518,7 +518,7 @@ export default function SplitwiseImportClient() {
           <CardHeader>
             <CardTitle className="text-base">Vista previa: {preview.sourceGroupName}</CardTitle>
             {preview.truncated ? (
-              <CardDescription className="text-warning">
+              <CardDescription className="text-warning-ink">
                 Se alcanzo el limite de paginas de seguridad; la vista previa es parcial.
               </CardDescription>
             ) : null}
@@ -691,7 +691,7 @@ export default function SplitwiseImportClient() {
               Importados: <strong>{job.importedCount}</strong> · Omitidos: <strong>{job.skippedCount}</strong> · Fallidos:{" "}
               <strong>{job.failedCount}</strong>
             </p>
-            {job.errorSummary ? <p className="text-destructive">{job.errorSummary}</p> : null}
+            {job.errorSummary ? <p className="text-destructive-ink">{job.errorSummary}</p> : null}
             {jobErrors.length > 0 ? (
               <div className="mt-2 flex flex-col gap-1">
                 <p className="font-medium text-foreground">Errores individuales:</p>
@@ -704,7 +704,7 @@ export default function SplitwiseImportClient() {
             ) : null}
             {job.targetGroupId ? (
               <div className="flex flex-wrap items-center gap-3">
-                <Link href={`/groups/${job.targetGroupId}`} className="text-primary underline-offset-4 hover:underline">
+                <Link href={`/groups/${job.targetGroupId}`} className="text-primary-ink underline-offset-4 hover:underline">
                   Ver grupo en Gatso
                 </Link>
                 <InviteMemberDialog groupId={job.targetGroupId} triggerLabel="Ver invitaciones pendientes" />

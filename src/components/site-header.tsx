@@ -127,7 +127,7 @@ export function SiteHeader({ session }: SiteHeaderProps) {
               {session ? (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onSelect={handleLogout}><LogOut /> Cerrar sesion</DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2 text-destructive-ink focus:text-destructive-ink" onSelect={handleLogout}><LogOut /> Cerrar sesion</DropdownMenuItem>
                 </>
               ) : null}
             </DropdownMenuContent>

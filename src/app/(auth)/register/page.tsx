@@ -112,7 +112,7 @@ export default function RegisterPage() {
             />
           </div>
           {error ? (
-            <p role="alert" className="text-sm font-medium text-destructive">
+            <p role="alert" className="text-sm font-medium text-destructive-ink">
               {error}
             </p>
           ) : null}
@@ -123,7 +123,7 @@ export default function RegisterPage() {
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             Ya tienes cuenta?{" "}
-            <Link href="/login" className="font-medium text-primary hover:underline">
+            <Link href="/login" className="font-medium text-primary-ink hover:underline">
               Inicia sesion
             </Link>
           </p>

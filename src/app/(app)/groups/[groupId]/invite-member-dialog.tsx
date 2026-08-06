@@ -185,7 +185,7 @@ export function InviteMemberDialog({
                         onClick={() => handleRevoke(invitation.id)}
                         disabled={revokingId === invitation.id}
                         aria-label="Eliminar invitacion"
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        className="text-destructive-ink hover:bg-destructive hover:text-destructive-foreground"
                       >
                         <Trash2 />
                         {revokingId === invitation.id ? "Eliminando..." : "Eliminar"}

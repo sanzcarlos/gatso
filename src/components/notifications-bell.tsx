@@ -116,7 +116,7 @@ export function NotificationsBell() {
             <button
               type="button"
               onClick={handleMarkAllRead}
-              className="text-xs font-normal text-primary hover:underline"
+              className="text-xs font-normal text-primary-ink hover:underline"
             >
               Marcar todas como leidas
             </button>
@@ -152,7 +152,7 @@ export function NotificationsBell() {
               type="button"
               onClick={handleLoadMore}
               disabled={loadingMore}
-              className="w-full px-2 py-1.5 text-center text-xs font-normal text-primary hover:underline disabled:opacity-50"
+              className="w-full px-2 py-1.5 text-center text-xs font-normal text-primary-ink hover:underline disabled:opacity-50"
             >
               {loadingMore ? "Cargando..." : "Cargar mas"}
             </button>
