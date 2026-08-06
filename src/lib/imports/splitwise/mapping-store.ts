@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { db, externalEntityMappings } from "@/db";
+import { db, expenses, externalEntityMappings, settlementPayments } from "@/db";
 import type { Tx } from "@/db";
 
 /**
@@ -38,6 +38,41 @@ export async function getEntityMapping(entityType: ImportEntityType, externalId:
     )
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Devuelve una correspondencia de gasto/pago solo cuando la entidad Gatso
+ * a la que apunta sigue existiendo. Los mappings no tienen FK porque
+ * `gatsoId` puede referenciar tablas distintas; por eso, al borrar un grupo
+ * y sus gastos/pagos en cascada, pueden quedar referencias obsoletas.
+ *
+ * Eliminar aqui la referencia huerfana permite que una importacion posterior
+ * vuelva a crear la entidad en vez de omitirla como si ya estuviera importada.
+ */
+export async function getLiveFinancialEntityMapping(
+  entityType: "expense" | "payment",
+  externalId: string,
+  client: Tx | typeof db = db,
+) {
+  const mapping = await getEntityMapping(entityType, externalId, client);
+  if (!mapping) return null;
+
+  const target = entityType === "expense"
+    ? await client
+        .select({ id: expenses.id })
+        .from(expenses)
+        .where(eq(expenses.id, mapping.gatsoId))
+        .limit(1)
+    : await client
+        .select({ id: settlementPayments.id })
+        .from(settlementPayments)
+        .where(eq(settlementPayments.id, mapping.gatsoId))
+        .limit(1);
+
+  if (target[0]) return mapping;
+
+  await client.delete(externalEntityMappings).where(eq(externalEntityMappings.id, mapping.id));
+  return null;
 }
 
 export async function getEntityMappingsFor(

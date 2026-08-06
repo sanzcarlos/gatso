@@ -15,7 +15,13 @@ import { fetchSplitwiseExpensesPage } from "./paginate";
 import type { SplitwiseClient, SplitwiseExpense, SplitwiseUser } from "./client";
 import { extractSplitwiseShares, chooseSplitForSingleExpense, decomposeMultiPayerExpense, sharesToFixedSplit } from "./mapping";
 import { displayNameFor } from "./preview-service";
-import { SPLITWISE_PROVIDER, getEntityMapping, getEntityMappingsFor, recordEntityMapping } from "./mapping-store";
+import {
+  SPLITWISE_PROVIDER,
+  getEntityMapping,
+  getEntityMappingsFor,
+  getLiveFinancialEntityMapping,
+  recordEntityMapping,
+} from "./mapping-store";
 import { classifySplitwiseExpense, determineFinalJobStatus, type ImportJobCounts } from "./job-status";
 
 /**
@@ -375,7 +381,7 @@ async function processSingleExpense(job: ImportJob, expense: SplitwiseExpense, m
 
   if (payers.length === 1) {
     const mappingKey = String(expense.id);
-    if (await getEntityMapping("expense", mappingKey)) {
+    if (await getLiveFinancialEntityMapping("expense", mappingKey)) {
       return { imported: 0, skipped: 1, failed: 0 };
     }
 
@@ -422,7 +428,7 @@ async function processSingleExpense(job: ImportJob, expense: SplitwiseExpense, m
   let failed = 0;
   for (const sub of subExpenses) {
     const legKey = `${expense.id}:${sub.payerId}`;
-    if (await getEntityMapping("expense", legKey)) {
+    if (await getLiveFinancialEntityMapping("expense", legKey)) {
       skipped++;
       continue;
     }
@@ -459,7 +465,7 @@ async function processSettlementPayment(job: ImportJob, expense: SplitwiseExpens
   }
 
   const mappingKey = String(expense.id);
-  if (await getEntityMapping("payment", mappingKey)) {
+  if (await getLiveFinancialEntityMapping("payment", mappingKey)) {
     return { imported: 0, skipped: 1, failed: 0 };
   }
 
