@@ -2023,10 +2023,6 @@ tooling) para recuperar ESLint en local y CI.
   en esta revision: `leaveGroup` (`src/lib/groups/service.ts:280-308`) sigue
   borrando el grupo de forma inmediata cuando el ultimo miembro lo abandona,
   sin archivado ni periodo de gracia.
-- Crear una pantalla para la auditoria global de plataforma; la API ya
-  soporta filtros y paginacion (`GET /api/admin/audit-log`), pero sigue sin
-  frontend propio (solo existe la version por grupo,
-  `group-audit-log-card.tsx`).
 - Anadir verificacion de contrasenas comunes/comprometidas (lista negra o
   servicio tipo HaveIBeenPwned). El resto de la politica ya esta al dia:
   `passwordSchema` (`src/lib/validation/auth.ts:23-26`) exige minimo 10 y
@@ -2087,8 +2083,8 @@ tooling) para recuperar ESLint en local y CI.
   (sigue siendo un `varchar(32)`, no un enum de Postgres, por lo que no
   hizo falta migracion). Cada concesion/revocacion queda registrada como
   `action: "update"`, `entityType: "user"`, con `beforeData`/`afterData`
-  `{ isPlatformAdmin }`, visible ya hoy via `GET /api/admin/audit-log`
-  aunque esa pantalla de auditoria global todavia no tiene frontend.
+  `{ isPlatformAdmin }`, visible via `GET /api/admin/audit-log` y, desde el
+  siguiente apartado, tambien en `/admin/audit-log`.
 - **Rutas**: `GET /api/admin/users` (`listAllUsers`), `PATCH
   /api/admin/users/[userId]` (`setPlatformAdmin`), ambas con
   `requireSession` + `requirePlatformAdmin` dentro del servicio (mismo
@@ -2100,3 +2096,24 @@ tooling) para recuperar ESLint en local y CI.
 - Verificado con `tsc --noEmit`, `next build` (rutas `/admin`, `/admin/users`,
   `/api/admin/users*` compiladas sin error de tipado de rutas) y `vitest run`
   (104/104).
+
+## Pantalla de auditoria global de plataforma
+
+- **Nueva pagina `/admin/audit-log`**
+  (`src/app/(app)/admin/audit-log/admin-audit-log-client.tsx`): consume la
+  misma API que ya existia sin frontend propio,
+  `GET /api/admin/audit-log` (`getPlatformAuditLog`, paginado por cursor y
+  filtrable por `action`/`entityType`). Mismo patron visual que
+  `GroupAuditLogCard` (filtros `Select`, lista con `Badge` de accion,
+  boton "Cargar mas"), pero como pagina propia con `Card` en vez de
+  tarjeta colapsable dentro de otra pantalla: la auditoria de plataforma
+  no tiene una pagina "padre" natural donde anidarla.
+- `describeEntry` traduce las dos entidades globales existentes hoy
+  (`currency`, `user`) a una frase legible, incluyendo el caso especifico
+  de concesion/revocacion de administrador de plataforma introducido en
+  el apartado anterior.
+- Anadido como tercera tarjeta en `/admin`
+  (`src/app/(app)/admin/page.tsx`), junto a "Administradores de
+  plataforma" y "Monedas".
+- Verificado con `tsc --noEmit`, `next build` (ruta `/admin/audit-log`
+  compilada sin error de tipado de rutas) y `vitest run` (104/104).

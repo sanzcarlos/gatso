@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Coins, ShieldCheck, Users } from "lucide-react";
+import { Coins, ScrollText, ShieldCheck, Users } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
 import { isPlatformAdmin } from "@/lib/auth/platform-admin";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,12 @@ const ADMIN_SECTIONS = [
     icon: Coins,
     title: "Monedas",
     description: "Gestionar el catalogo global de monedas activas para crear gastos.",
+  },
+  {
+    href: "/admin/audit-log",
+    icon: ScrollText,
+    title: "Auditoria de plataforma",
+    description: "Historial inmutable de acciones sobre catalogos y roles globales.",
   },
 ] as const;
 
