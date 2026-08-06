@@ -336,7 +336,7 @@ export function GroupSummaryCard({
           {subgroups.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Todavia no hay subgrupos.</div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">{subgroups.map((subgroup) => <Link key={subgroup.id} href={subgroup.href as Route} className="group flex items-center justify-between rounded-xl border border-border/70 bg-background/60 p-4 font-semibold transition-colors hover:border-primary-ink/30 hover:bg-accent hover:text-accent-foreground"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground"><FolderKanban className="h-4 w-4" /></span>{subgroup.name}</span><ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-accent-foreground" /></Link>)}</div>
+            <div className="grid gap-3 sm:grid-cols-2">{subgroups.map((subgroup) => <Link key={subgroup.id} href={subgroup.href as Route} className="group flex items-center justify-between rounded-xl border border-border/70 bg-background/60 p-4 font-semibold transition-colors hover:border-primary-ink/30 hover:bg-accent/15"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground"><FolderKanban className="h-4 w-4" /></span>{subgroup.name}</span><ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" /></Link>)}</div>
           )}
           {subgroupAction ? <div className="border-t border-border pt-4">{subgroupAction}</div> : null}
         </DialogContent>
@@ -346,9 +346,9 @@ export function GroupSummaryCard({
 }
 
 function MetricButton({ title, value, detail, icon, tone, onClick }: { title: string; value: string; detail: string; icon: ReactNode; tone: "muted" | "primary" | "info" | "secondary"; onClick: () => void }) {
-  const toneClass = { muted: "bg-muted/75", primary: "bg-primary", info: "bg-info", secondary: "bg-secondary/80" }[tone];
+  const toneClass = { muted: "bg-muted/75 text-foreground", primary: "bg-primary text-primary-foreground", info: "bg-info text-info-foreground", secondary: "bg-secondary/80 text-secondary-foreground" }[tone];
   const accentClass = { muted: "text-muted-foreground", primary: "text-primary-foreground", info: "text-info-foreground", secondary: "text-secondary-foreground" }[tone];
-  return <button type="button" onClick={onClick} className={`group rounded-2xl p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${toneClass}`}><div className="flex items-center justify-between gap-2"><p className={`text-xs font-semibold uppercase tracking-wide ${accentClass}`}>{title}</p><span className={`[&_svg]:h-4 [&_svg]:w-4 ${accentClass}`}>{icon}</span></div><p className="mt-2 truncate text-2xl font-bold tabular-nums" title={value}>{value}</p><p className="mt-1 truncate text-xs text-muted-foreground" title={detail}>{detail}</p></button>;
+  return <button type="button" onClick={onClick} className={`group rounded-2xl p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${toneClass}`}><div className="flex items-center justify-between gap-2"><p className={`text-xs font-semibold uppercase tracking-wide ${accentClass}`}>{title}</p><span className={`[&_svg]:h-4 [&_svg]:w-4 ${accentClass}`}>{icon}</span></div><p className="mt-2 truncate text-2xl font-bold tabular-nums" title={value}>{value}</p><p className={`mt-1 truncate text-xs ${accentClass}`} title={detail}>{detail}</p></button>;
 }
 
 function ExpenseRow({ expense, showStatus = false }: { expense: SummaryExpense; showStatus?: boolean }) {

@@ -1,7 +1,7 @@
 export default function Loading() {
   return (
     <main
-      className="relative isolate grid min-h-dvh place-items-center overflow-hidden bg-accent px-6 py-10"
+      className="relative isolate grid min-h-dvh place-items-center overflow-hidden bg-accent px-6 py-10 text-accent-foreground"
       aria-live="polite"
       aria-busy="true"
     >
@@ -29,19 +29,19 @@ export default function Loading() {
           </div>
         </div>
 
-        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-primary-ink">Gatso</p>
-        <h1 className="mt-3 text-balance text-2xl font-bold tracking-tight text-foreground">
+        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-accent-foreground">Gatso</p>
+        <h1 className="mt-3 text-balance text-2xl font-bold tracking-tight text-accent-foreground">
           Preparando tus cuentas
         </h1>
-        <p className="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">
+        <p className="mt-2 max-w-xs text-sm leading-6 text-accent-foreground">
           Estamos poniendo tus grupos y gastos al día.
         </p>
 
         <div className="mt-8 flex items-center gap-2" role="status">
           <span className="sr-only">Cargando la aplicación</span>
-          <span className="gatso-loading-dot h-2 w-2 rounded-full bg-primary" />
-          <span className="gatso-loading-dot gatso-loading-dot-second h-2 w-2 rounded-full bg-primary" />
-          <span className="gatso-loading-dot gatso-loading-dot-third h-2 w-2 rounded-full bg-primary" />
+          <span className="gatso-loading-dot h-2 w-2 rounded-full bg-accent-foreground" />
+          <span className="gatso-loading-dot gatso-loading-dot-second h-2 w-2 rounded-full bg-accent-foreground" />
+          <span className="gatso-loading-dot gatso-loading-dot-third h-2 w-2 rounded-full bg-accent-foreground" />
         </div>
       </section>
     </main>

@@ -46,7 +46,7 @@ export function CollapsibleCard({
       <Card className={className}>
         <CollapsiblePrimitive.Trigger asChild>
           <CardHeader
-            className="group flex-row items-center justify-between gap-2 cursor-pointer select-none transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="group flex-row items-center justify-between gap-2 cursor-pointer select-none transition-colors hover:bg-accent/15"
             role="button"
           >
             <div className="flex flex-col gap-1.5">

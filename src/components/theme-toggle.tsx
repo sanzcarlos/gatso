@@ -37,13 +37,13 @@ export function ThemeToggle() {
         <Sun
           className={cn(
             "h-3.5 w-3.5 transition-opacity",
-            isDark ? "opacity-40 text-primary-foreground" : "opacity-100 text-foreground",
+            isDark ? "opacity-40 text-primary-foreground" : "opacity-100 text-background",
           )}
         />
         <Moon
           className={cn(
             "h-3.5 w-3.5 transition-opacity",
-            isDark ? "opacity-100 text-primary-foreground" : "opacity-40 text-muted-foreground",
+            isDark ? "opacity-100 text-primary-foreground" : "opacity-40 text-background",
           )}
         />
       </span>
