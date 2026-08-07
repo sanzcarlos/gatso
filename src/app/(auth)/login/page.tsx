@@ -30,7 +30,7 @@ export default function LoginPage() {
         setError(data.error ?? "No se pudo iniciar sesion");
         return;
       }
-      router.push("/");
+      router.replace("/groups");
       router.refresh();
     } finally {
       setLoading(false);
