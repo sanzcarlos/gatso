@@ -12,7 +12,16 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { ArrowUpRight, Crown, Plus, TicketCheck, UsersRound } from "lucide-react";
 
 interface GroupRow {
@@ -37,6 +46,8 @@ export default function GroupsClient() {
   const [inviteCode, setInviteCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
 
   useEffect(() => {
     apiFetch("/api/currencies")
@@ -80,6 +91,7 @@ export default function GroupsClient() {
       }
       setNewGroupName("");
       setBaseCurrencyCode("EUR");
+      setCreateDialogOpen(false);
       toast.success("Grupo creado");
       await loadGroups();
     } catch {
@@ -103,6 +115,7 @@ export default function GroupsClient() {
         return;
       }
       setInviteCode("");
+      setJoinDialogOpen(false);
       toast.success("Te has unido al grupo");
       await loadGroups();
     } catch {
@@ -132,19 +145,19 @@ export default function GroupsClient() {
 
       {offline ? <OfflineBanner hasCachedData={groups !== null} /> : null}
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card className="overflow-hidden border-primary/20 shadow-md">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Plus className="h-5 w-5" /></span>
-              <div>
-                <CardTitle>Crear un grupo</CardTitle>
-                <CardDescription className="mt-1">Empieza desde cero y comparte el codigo.</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <form onSubmit={handleCreate}>
-            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="lg">
+              <Plus /> Crear grupo
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Crear un grupo</DialogTitle>
+              <DialogDescription>Empieza desde cero y comparte el codigo con los participantes.</DialogDescription>
+            </DialogHeader>
+            <form className="grid gap-5" onSubmit={handleCreate}>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="new-group-name">Nombre del grupo</Label>
                 <Input
@@ -173,27 +186,27 @@ export default function GroupsClient() {
                   </SelectContent>
                 </Select>
               </div>
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" className="w-full sm:w-auto" disabled={creating}>
-                {creating ? "Creando..." : "Crear grupo"}
-              </Button>
-            </CardFooter>
-          </form>
-        </Card>
+              <DialogFooter>
+                <Button type="submit" disabled={creating}>
+                  {creating ? "Creando..." : "Crear grupo"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
-        <Card className="overflow-hidden shadow-md">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <span className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-secondary-foreground"><TicketCheck className="h-5 w-5" /></span>
-              <div>
-                <CardTitle>Unirme con un codigo</CardTitle>
-                <CardDescription className="mt-1">Pega la invitacion que te han enviado.</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <form onSubmit={handleJoin}>
-            <CardContent>
+        <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="lg" variant="secondary">
+              <TicketCheck /> Unirme a un grupo
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Unirme a un grupo</DialogTitle>
+              <DialogDescription>Pega el codigo de la invitacion que te han enviado.</DialogDescription>
+            </DialogHeader>
+            <form className="grid gap-5" onSubmit={handleJoin}>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="invite-code">Codigo de invitacion</Label>
                 <Input
@@ -205,14 +218,14 @@ export default function GroupsClient() {
                   required
                 />
               </div>
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" variant="secondary" className="w-full sm:w-auto" disabled={joining}>
-                {joining ? "Uniendome..." : "Unirme"}
-              </Button>
-            </CardFooter>
-          </form>
-        </Card>
+              <DialogFooter>
+                <Button type="submit" variant="secondary" disabled={joining}>
+                  {joining ? "Uniendome..." : "Unirme"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <section className="flex flex-col gap-4">
